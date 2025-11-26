@@ -4,6 +4,18 @@
 BINARY_NAME="crawler"
 LOG_FILE="crawler.log"
 
+# Ensure we have the latest code
+echo "Pulling latest changes..."
+git pull origin feature/streamruby-watcher
+
+# Install Go dependencies
+echo "Tidying Go modules..."
+go mod tidy
+
+# Install Playwright browsers and system dependencies
+echo "Installing Playwright dependencies..."
+go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps
+
 echo "Stopping existing $BINARY_NAME processes..."
 # Find and kill existing processes
 pids=$(pgrep -f "$BINARY_NAME")
