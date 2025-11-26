@@ -262,13 +262,46 @@ func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
 		}
 
 		// Play
-		if _, err := video.Evaluate("v => v.play()", nil); err != nil {
-			log.Printf("Failed to play video %d: %v", i+1, err)
-			// Try to click play button if exists?
-			// Sometimes video needs user interaction.
-			// Try clicking the video element itself
-			video.Click()
-			time.Sleep(1 * time.Second)
+		log.Printf("Attempting to play video %d...", i+1)
+		
+		// Ad-Busting / Click-Through Logic
+		// Many streaming sites require multiple clicks to clear invisible overlays/ads before the video plays.
+		maxClicks := 10
+		isPlaying := false
+		
+		for attempt := 0; attempt < maxClicks; attempt++ {
+			// Check if playing
+			paused, err := video.Evaluate("v => v.paused", nil)
+			if err == nil && !paused.(bool) {
+				isPlaying = true
+				log.Println("Video is playing!")
+				break
+			}
+
+			log.Printf("Click attempt %d/%d to start video...", attempt+1, maxClicks)
+
+			// Try different click targets
+			// 1. Try the specific JW Player display icon if it exists (common in the user's provided HTML)
+			jwDisplay := page.Locator(".jw-display-icon-display").First()
+			if visible, _ := jwDisplay.IsVisible(); visible {
+				jwDisplay.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(1000)})
+			} else {
+				// Fallback to clicking the video element itself
+				video.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(1000)})
+			}
+
+			// Also try forcing play via JS
+			video.Evaluate("v => v.play()", nil)
+
+			// Wait a bit for ads to trigger or video to start
+			time.Sleep(2 * time.Second)
+			
+			// If a new tab/popup opened, the main page might have lost focus or paused.
+			// The popup handler in Run() closes them, but we need to ensure we keep interacting.
+		}
+
+		if !isPlaying {
+			log.Printf("Warning: Could not verify if video %d started playing after %d attempts", i+1, maxClicks)
 		}
 
 		// Monitor video
