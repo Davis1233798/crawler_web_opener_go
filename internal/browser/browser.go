@@ -84,12 +84,6 @@ func (bp *BrowserPool) CreateContext(p *proxy.Proxy) (playwright.BrowserContext,
 		return nil, err
 	}
 
-	// Auto-close popups to ensure focus on main page
-	context.On("page", func(page playwright.Page) {
-		log.Println("Popup detected, closing...")
-		page.Close()
-	})
-
 	// Inject stealth script
 	script := fingerprint.GetStealthScript(fp)
 	if err := context.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
@@ -131,6 +125,12 @@ func (bot *BrowserBot) Run(targets []string, p *proxy.Proxy, minDuration int) er
 			continue
 		}
 
+		// Auto-close popups
+		page.On("popup", func(popup playwright.Page) {
+			log.Println("Popup detected, closing...")
+			popup.Close()
+		})
+
 		// Navigation
 		log.Printf("Navigating to %s", url)
 		if _, err := page.Goto(url, playwright.PageGotoOptions{
@@ -146,7 +146,7 @@ func (bot *BrowserBot) Run(targets []string, p *proxy.Proxy, minDuration int) er
 		if err := bot.watchVideos(page, p); err != nil {
 			log.Printf("Video watching failed for %s: %v", url, err)
 		}
-		
+
 		page.Close()
 	}
 
@@ -159,7 +159,7 @@ func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
 
 	// Find all video tags (including in frames)
 	var videos []playwright.Locator
-	
+
 	// Main frame videos
 	mainVideos, err := page.Locator("video").All()
 	if err == nil {
@@ -268,7 +268,7 @@ func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
 				}
 			}
 		}
-		
+
 		// Wait for download to finish before moving to next video
 		downloadWg.Wait()
 	}
