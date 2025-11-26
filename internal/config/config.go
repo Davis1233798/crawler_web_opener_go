@@ -21,6 +21,7 @@ type Config struct {
 	MetricsPort     int
 	ScrapyType      string
 	Targets         []string
+	MaxViewsPerIP   int
 }
 
 var (
@@ -49,6 +50,7 @@ func (c *Config) load() {
 	c.BrowserPoolSize = getEnvAsInt("BROWSER_POOL_SIZE", 5)
 	c.MetricsPort = getEnvAsInt("METRICS_PORT", 8000)
 	c.ScrapyType = getEnv("SCRAPY_TYPE", "ALL")
+	c.MaxViewsPerIP = getEnvAsInt("MAX_VIEWS_PER_IP", 3)
 
 	c.loadTargets()
 }

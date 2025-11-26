@@ -99,19 +99,20 @@ loop:
 					var p *proxy.Proxy
 					if useProxy {
 						// Get Proxy
-						p = proxyPool.GetProxy()
+						p = proxyPool.GetProxy(cfg.MaxViewsPerIP)
 						if p == nil {
-							log.Println("No proxies available, waiting...")
+							log.Println("No proxies available (limit reached or empty), waiting...")
 							time.Sleep(5 * time.Second)
 							return
 						}
+						proxyPool.RecordUsage(p)
 					} else {
 						log.Println("Running task without proxy (direct connection)")
 					}
 
-					// Get Target
-					url := cfg.GetRandomTarget()
-					if url == "" {
+					// Get Targets
+					targets := cfg.Targets
+					if len(targets) == 0 {
 						log.Println("No targets available!")
 						time.Sleep(5 * time.Second)
 						return
@@ -121,7 +122,7 @@ loop:
 					defer metrics.ActiveThreads.Dec()
 
 					start := time.Now()
-					err := bot.Run(url, p, cfg.Duration)
+					err := bot.Run(targets, p, cfg.Duration)
 					duration := time.Since(start).Seconds()
 					metrics.SessionDuration.Observe(duration)
 
@@ -132,7 +133,7 @@ loop:
 							proxyPool.MarkFailed(*p)
 						}
 					} else {
-						log.Printf("Task completed for %s", url)
+						log.Printf("Task completed for %d targets", len(targets))
 						metrics.TasksCompleted.Inc()
 					}
 				}()

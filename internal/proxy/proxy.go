@@ -45,6 +45,7 @@ type MemoryProxyPool struct {
 	minPoolSize    int
 	workingProxies []Proxy
 	failedProxies  map[string]bool
+	usageHistory   map[string][]time.Time
 	lock           sync.RWMutex
 }
 
@@ -53,6 +54,7 @@ func NewMemoryProxyPool(cacheFile string, minPoolSize int) *MemoryProxyPool {
 		cacheFile:     cacheFile,
 		minPoolSize:   minPoolSize,
 		failedProxies: make(map[string]bool),
+		usageHistory:  make(map[string][]time.Time),
 	}
 }
 
@@ -116,14 +118,55 @@ func ParseProxy(proxyStr string) *Proxy {
 	return nil
 }
 
-func (p *MemoryProxyPool) GetProxy() *Proxy {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
+func (p *MemoryProxyPool) GetProxy(maxViews int) *Proxy {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	if len(p.workingProxies) == 0 {
 		return nil
 	}
-	return &p.workingProxies[rand.Intn(len(p.workingProxies))]
+
+	// Filter proxies that have not exceeded the limit
+	var available []*Proxy
+	now := time.Now()
+	window := 24 * time.Hour
+
+	for i := range p.workingProxies {
+		px := &p.workingProxies[i]
+		key := px.String()
+		history := p.usageHistory[key]
+
+		// Clean up old history
+		var newHistory []time.Time
+		for _, t := range history {
+			if now.Sub(t) < window {
+				newHistory = append(newHistory, t)
+			}
+		}
+		p.usageHistory[key] = newHistory
+
+		if len(newHistory) < maxViews {
+			available = append(available, px)
+		}
+	}
+
+	if len(available) == 0 {
+		return nil
+	}
+
+	// Pick random from available
+	return available[rand.Intn(len(available))]
+}
+
+func (p *MemoryProxyPool) RecordUsage(proxy *Proxy) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if proxy == nil {
+		return
+	}
+	key := proxy.String()
+	p.usageHistory[key] = append(p.usageHistory[key], time.Now())
 }
 
 func (p *MemoryProxyPool) MarkFailed(proxy Proxy) {
