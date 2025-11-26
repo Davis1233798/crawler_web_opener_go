@@ -226,7 +226,7 @@ func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
 		}); err != nil {
 			log.Printf("Failed to take screenshot: %v", err)
 		}
-		
+
 		time.Sleep(2 * time.Second)
 		return nil
 	}
@@ -263,12 +263,12 @@ func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
 
 		// Play
 		log.Printf("Attempting to play video %d...", i+1)
-		
+
 		// Ad-Busting / Click-Through Logic
 		// Many streaming sites require multiple clicks to clear invisible overlays/ads before the video plays.
 		maxClicks := 10
 		isPlaying := false
-		
+
 		for attempt := 0; attempt < maxClicks; attempt++ {
 			// Check if playing
 			paused, err := video.Evaluate("v => v.paused", nil)
@@ -295,7 +295,7 @@ func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
 
 			// Wait a bit for ads to trigger or video to start
 			time.Sleep(2 * time.Second)
-			
+
 			// If a new tab/popup opened, the main page might have lost focus or paused.
 			// The popup handler in Run() closes them, but we need to ensure we keep interacting.
 		}
