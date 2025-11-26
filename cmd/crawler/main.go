@@ -120,20 +120,52 @@ loop:
 					metrics.ActiveThreads.Inc()
 					defer metrics.ActiveThreads.Dec()
 
-					start := time.Now()
-					err := bot.Run(url, p, cfg.Duration)
-					duration := time.Since(start).Seconds()
-					metrics.SessionDuration.Observe(duration)
+					var err error
+					maxRetries := 3
 
-					if err != nil {
-						log.Printf("Task failed: %v", err)
-						metrics.TasksFailed.Inc()
+					for i := 0; i < maxRetries; i++ {
+						// Acquire proxy if needed
+						if useProxy && p == nil {
+							p = proxyPool.GetProxy()
+							if p == nil {
+								log.Println("No proxies available, waiting...")
+								time.Sleep(5 * time.Second)
+								// If we can't get a proxy, we can't proceed with this attempt
+								continue
+							}
+						}
+
+						start := time.Now()
+						err = bot.Run(url, p, cfg.Duration)
+						duration := time.Since(start).Seconds()
+						metrics.SessionDuration.Observe(duration)
+
+						if err == nil {
+							log.Printf("Task completed for %s", url)
+							metrics.TasksCompleted.Inc()
+							break // Success, exit retry loop
+						}
+
+						// Handle failure
+						log.Printf("Attempt %d/%d failed for %s: %v", i+1, maxRetries, url, err)
+						
 						if p != nil {
 							proxyPool.MarkFailed(*p)
+							p = nil // Reset proxy so we get a new one next time
 						}
-					} else {
-						log.Printf("Task completed for %s", url)
-						metrics.TasksCompleted.Inc()
+
+						if !useProxy {
+							// If not using proxy, retrying might not help if site is down, but let's try once more or break
+							break
+						}
+						
+						// Small delay before retry
+						time.Sleep(2 * time.Second)
+					}
+
+					if err != nil {
+						log.Printf("Task permanently failed after %d attempts: %v", maxRetries, err)
+						metrics.TasksFailed.Inc()
 					}
 				}()
 			case <-stopChan:
