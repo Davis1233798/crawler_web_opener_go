@@ -26,7 +26,7 @@ func main() {
 
 	// Init Proxy Pool
 	proxyPool := proxy.NewMemoryProxyPool("proxies.txt", cfg.Threads*2)
-	
+
 	// Seed random number generator once
 	rand.Seed(time.Now().UnixNano())
 
@@ -118,7 +118,7 @@ loop:
 					// Get Targets
 					targets := make([]string, len(cfg.Targets))
 					copy(targets, cfg.Targets)
-					
+
 					if len(targets) == 0 {
 						log.Println("No targets available!")
 						time.Sleep(5 * time.Second)

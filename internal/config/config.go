@@ -46,7 +46,7 @@ func (c *Config) load() {
 
 	c.Threads = getEnvAsInt("THREADS", 10)
 	c.Duration = getEnvAsInt("DURATION", 30)
-	c.Headless = getEnvAsBool("HEADLESS", false)
+	c.Headless = getEnvAsBool("HEADLESS", true)
 	c.BrowserPoolSize = getEnvAsInt("BROWSER_POOL_SIZE", 5)
 	c.MetricsPort = getEnvAsInt("METRICS_PORT", 8000)
 	c.ScrapyType = getEnv("SCRAPY_TYPE", "ALL")

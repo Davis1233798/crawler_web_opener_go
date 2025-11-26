@@ -40,7 +40,7 @@ echo "Build successful."
 
 echo "Starting $BINARY_NAME..."
 # Run in background with nohup
-nohup ./$BINARY_NAME > $LOG_FILE 2>&1 &
+HEADLESS=true nohup ./$BINARY_NAME > $LOG_FILE 2>&1 &
 
 echo "$BINARY_NAME started. Logs are being written to $LOG_FILE."
 echo "PID: $!"
