@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -25,6 +26,10 @@ func main() {
 
 	// Init Proxy Pool
 	proxyPool := proxy.NewMemoryProxyPool("proxies.txt", cfg.Threads*2)
+	
+	// Seed random number generator once
+	rand.Seed(time.Now().UnixNano())
+
 	// Assuming targetURL from first target for verification
 	targetURL := ""
 	if len(cfg.Targets) > 0 {
@@ -111,12 +116,19 @@ loop:
 					}
 
 					// Get Targets
-					targets := cfg.Targets
+					targets := make([]string, len(cfg.Targets))
+					copy(targets, cfg.Targets)
+					
 					if len(targets) == 0 {
 						log.Println("No targets available!")
 						time.Sleep(5 * time.Second)
 						return
 					}
+
+					// Shuffle targets to avoid all workers hitting the same URL at once
+					rand.Shuffle(len(targets), func(i, j int) {
+						targets[i], targets[j] = targets[j], targets[i]
+					})
 
 					metrics.ActiveThreads.Inc()
 					defer metrics.ActiveThreads.Dec()
@@ -132,6 +144,8 @@ loop:
 						if p != nil {
 							proxyPool.MarkFailed(*p)
 						}
+						// Add a small delay on failure to prevent rapid looping if browser is crashing
+						time.Sleep(2 * time.Second)
 					} else {
 						log.Printf("Task completed for %d targets", len(targets))
 						metrics.TasksCompleted.Inc()

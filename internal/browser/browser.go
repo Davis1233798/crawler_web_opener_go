@@ -21,6 +21,7 @@ type BrowserPool struct {
 	pw       *playwright.Playwright
 	browser  playwright.Browser
 	headless bool
+	mu       sync.RWMutex
 }
 
 func NewBrowserPool(headless bool) *BrowserPool {
@@ -30,12 +31,28 @@ func NewBrowserPool(headless bool) *BrowserPool {
 }
 
 func (bp *BrowserPool) Initialize() error {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	return bp.startBrowser()
+}
+
+func (bp *BrowserPool) startBrowser() error {
 	var err error
-	bp.pw, err = playwright.Run()
-	if err != nil {
-		return fmt.Errorf("could not start playwright: %v", err)
+	if bp.pw == nil {
+		bp.pw, err = playwright.Run()
+		if err != nil {
+			return fmt.Errorf("could not start playwright: %v", err)
+		}
 	}
 
+	if bp.browser != nil {
+		if bp.browser.IsConnected() {
+			return nil
+		}
+		bp.browser.Close()
+	}
+
+	log.Println("Launching new browser instance...")
 	bp.browser, err = bp.pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(bp.headless),
 		Proxy: &playwright.Proxy{
@@ -45,6 +62,7 @@ func (bp *BrowserPool) Initialize() error {
 			"--disable-blink-features=AutomationControlled",
 			"--no-sandbox",
 			"--disable-setuid-sandbox",
+			"--disable-dev-shm-usage", // Added to prevent crashes in Docker/low memory
 		},
 	})
 	if err != nil {
@@ -54,6 +72,17 @@ func (bp *BrowserPool) Initialize() error {
 }
 
 func (bp *BrowserPool) CreateContext(p *proxy.Proxy) (playwright.BrowserContext, error) {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+
+	// Ensure browser is running
+	if bp.browser == nil || !bp.browser.IsConnected() {
+		log.Println("Browser disconnected, attempting restart...")
+		if err := bp.startBrowser(); err != nil {
+			return nil, fmt.Errorf("failed to restart browser: %v", err)
+		}
+	}
+
 	fp := fingerprint.GetRandomFingerprint()
 
 	cs := playwright.ColorScheme(fp.ColorScheme)
@@ -122,6 +151,10 @@ func (bot *BrowserBot) Run(targets []string, p *proxy.Proxy, minDuration int) er
 		page, err := context.NewPage()
 		if err != nil {
 			log.Printf("Failed to create page for %s: %v", url, err)
+			// If browser is closed, abort the session so we can restart
+			if strings.Contains(err.Error(), "closed") || strings.Contains(err.Error(), "crash") {
+				return fmt.Errorf("browser crashed or closed: %w", err)
+			}
 			continue
 		}
 
@@ -154,8 +187,14 @@ func (bot *BrowserBot) Run(targets []string, p *proxy.Proxy, minDuration int) er
 }
 
 func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
-	// Wait for potential video load
-	time.Sleep(5 * time.Second)
+	// Wait for potential video load - try to wait for selector first
+	log.Println("Waiting for video element...")
+	tryWait := func() {
+		page.WaitForSelector("video", playwright.PageWaitForSelectorOptions{
+			Timeout: playwright.Float(10000),
+		})
+	}
+	tryWait()
 
 	// Find all video tags (including in frames)
 	var videos []playwright.Locator
@@ -175,8 +214,20 @@ func (bot *BrowserBot) watchVideos(page playwright.Page, p *proxy.Proxy) error {
 	}
 
 	if len(videos) == 0 {
-		log.Println("No videos found on page (checked frames too)")
-		time.Sleep(5 * time.Second)
+		title, _ := page.Title()
+		content, _ := page.Content()
+		log.Printf("No videos found on page. Title: '%s'", title)
+		if len(content) > 500 {
+			log.Printf("Page content preview: %s...", content[:500])
+		}
+		// Take screenshot for debug
+		if _, err := page.Screenshot(playwright.PageScreenshotOptions{
+			Path: playwright.String("debug_no_video.png"),
+		}); err != nil {
+			log.Printf("Failed to take screenshot: %v", err)
+		}
+		
+		time.Sleep(2 * time.Second)
 		return nil
 	}
 
