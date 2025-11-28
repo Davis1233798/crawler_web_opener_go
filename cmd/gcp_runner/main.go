@@ -1,0 +1,114 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+)
+
+func main() {
+	image := flag.String("image", "", "Docker image to run")
+	count := flag.Int("count", 1, "Number of VMs to create")
+	duration := flag.Int("duration", 60, "Duration to run in seconds")
+	project := flag.String("project", "", "GCP Project ID")
+	zone := flag.String("zone", "us-central1-a", "GCP Zone")
+	dryRun := flag.Bool("dry-run", false, "Print commands without executing")
+
+	flag.Parse()
+
+	if *image == "" || *project == "" {
+		fmt.Println("Usage: gcp_runner -image <image> -project <project> [options]")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	var wg sync.WaitGroup
+	instanceNames := make([]string, 0, *count)
+
+	// Create VMs
+	log.Printf("Creating %d VMs...", *count)
+	for i := 0; i < *count; i++ {
+		instanceName := fmt.Sprintf("crawler-worker-%d-%d", time.Now().Unix(), i)
+		instanceNames = append(instanceNames, instanceName)
+		wg.Add(1)
+
+		go func(name string) {
+			defer wg.Done()
+			createVM(name, *image, *project, *zone, *dryRun)
+		}(instanceName)
+	}
+	wg.Wait()
+
+	log.Printf("All VMs created. Running for %d seconds...", *duration)
+	time.Sleep(time.Duration(*duration) * time.Second)
+
+	// Delete VMs
+	log.Println("Time's up! Deleting VMs...")
+	for _, name := range instanceNames {
+		wg.Add(1)
+		go func(n string) {
+			defer wg.Done()
+			deleteVM(n, *project, *zone, *dryRun)
+		}(name)
+	}
+	wg.Wait()
+	log.Println("All VMs deleted. Done.")
+}
+
+func createVM(name, image, project, zone string, dryRun bool) {
+	// gcloud compute instances create-with-container <name> \
+	// --project=<project> --zone=<zone> \
+	// --container-image=<image> \
+	// --container-env=NO_PROXY_MODE=true
+
+	args := []string{
+		"compute", "instances", "create-with-container", name,
+		"--project", project,
+		"--zone", zone,
+		"--container-image", image,
+		"--container-env", "NO_PROXY_MODE=true",
+		"--quiet", // Non-interactive
+	}
+
+	cmd := exec.Command("gcloud", args...)
+	if dryRun {
+		log.Printf("[DRY RUN] %s", strings.Join(cmd.Args, " "))
+		return
+	}
+
+	log.Printf("Creating VM %s...", name)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Error creating VM %s: %v\nOutput: %s", name, err, string(output))
+	} else {
+		log.Printf("VM %s created successfully.", name)
+	}
+}
+
+func deleteVM(name, project, zone string, dryRun bool) {
+	args := []string{
+		"compute", "instances", "delete", name,
+		"--project", project,
+		"--zone", zone,
+		"--quiet",
+	}
+
+	cmd := exec.Command("gcloud", args...)
+	if dryRun {
+		log.Printf("[DRY RUN] %s", strings.Join(cmd.Args, " "))
+		return
+	}
+
+	log.Printf("Deleting VM %s...", name)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Error deleting VM %s: %v\nOutput: %s", name, err, string(output))
+	} else {
+		log.Printf("VM %s deleted successfully.", name)
+	}
+}

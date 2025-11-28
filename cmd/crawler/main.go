@@ -25,24 +25,29 @@ func main() {
 
 	// Init Proxy Pool
 	proxyPool := proxy.NewMemoryProxyPool("proxies.txt", cfg.Threads*2)
-	// Assuming targetURL from first target for verification
-	targetURL := ""
-	if len(cfg.Targets) > 0 {
-		targetURL = cfg.Targets[0]
-	}
 
-	// Fetch proxies if pool is empty or small
-	fetcher := proxy.NewProxyFetcher()
-	// Initial load from disk
-	proxyPool.Initialize(true, targetURL)
+	if !cfg.NoProxyMode {
+		// Assuming targetURL from first target for verification
+		targetURL := ""
+		if len(cfg.Targets) > 0 {
+			targetURL = cfg.Targets[0]
+		}
 
-	if proxyPool.Size() < cfg.Threads {
-		log.Println("Proxy pool is low, fetching from APIs...")
-		newProxies := fetcher.FetchAll(100)
-		proxyPool.AddProxies(newProxies)
-		// Save to disk after adding
-		proxyPool.SaveToDisk()
-		log.Printf("Proxy pool now has %d proxies", proxyPool.Size())
+		// Fetch proxies if pool is empty or small
+		fetcher := proxy.NewProxyFetcher()
+		// Initial load from disk
+		proxyPool.Initialize(true, targetURL)
+
+		if proxyPool.Size() < cfg.Threads {
+			log.Println("Proxy pool is low, fetching from APIs...")
+			newProxies := fetcher.FetchAll(100)
+			proxyPool.AddProxies(newProxies)
+			// Save to disk after adding
+			proxyPool.SaveToDisk()
+			log.Printf("Proxy pool now has %d proxies", proxyPool.Size())
+		}
+	} else {
+		log.Println("Running in NO_PROXY_MODE. Skipping proxy initialization.")
 	}
 
 	// Init Browser Pool
@@ -94,6 +99,9 @@ loop:
 					counterLock.Lock()
 					taskCounter++
 					useProxy := taskCounter%cfg.Threads != 0 // Every Nth task runs without proxy
+					if cfg.NoProxyMode {
+						useProxy = false
+					}
 					counterLock.Unlock()
 
 					var p *proxy.Proxy
@@ -148,7 +156,7 @@ loop:
 
 						// Handle failure
 						log.Printf("Attempt %d/%d failed for %s: %v", i+1, maxRetries, url, err)
-						
+
 						if p != nil {
 							proxyPool.MarkFailed(*p)
 							p = nil // Reset proxy so we get a new one next time
@@ -158,7 +166,7 @@ loop:
 							// If not using proxy, retrying might not help if site is down, but let's try once more or break
 							break
 						}
-						
+
 						// Small delay before retry
 						time.Sleep(2 * time.Second)
 					}
