@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/Davis1233798/crawler-go/internal/proxy"
@@ -127,8 +128,66 @@ func (bot *BrowserBot) Run(url string, p *proxy.Proxy, minDuration int) error {
 	}
 
 	// Simulate activity
+	bot.simulateActivity(page, minDuration)
+
+	return nil
+}
+
+func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	context, err := bot.pool.CreateContext(p)
+	if err != nil {
+		return err
+	}
+	defer context.Close()
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(urls))
+
+	log.Printf("Opening %d tabs in parallel...", len(urls))
+
+	for _, u := range urls {
+		wg.Add(1)
+		go func(targetURL string) {
+			defer wg.Done()
+
+			page, err := context.NewPage()
+			if err != nil {
+				log.Printf("Failed to create page for %s: %v", targetURL, err)
+				errChan <- err
+				return
+			}
+			// We don't defer page.Close() here because context.Close() will handle it,
+			// and we want them open simultaneously.
+
+			log.Printf("Navigating to %s", targetURL)
+			if _, err := page.Goto(targetURL, playwright.PageGotoOptions{
+				Timeout:   playwright.Float(60000),                   // Increased timeout for batch
+				WaitUntil: playwright.WaitUntilStateDomcontentloaded, // Faster than networkidle for batch
+			}); err != nil {
+				log.Printf("Navigation failed for %s: %v", targetURL, err)
+				errChan <- err
+				return
+			}
+
+			bot.simulateActivity(page, minDuration)
+		}(u)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Collect errors if needed, but for now we just log them in the loop
+	// If all failed, we might want to return an error, but partial success is okay.
+	return nil
+}
+
+func (bot *BrowserBot) simulateActivity(page playwright.Page, durationSeconds int) {
 	startTime := time.Now()
-	for time.Since(startTime).Seconds() < float64(minDuration) {
+	for time.Since(startTime).Seconds() < float64(durationSeconds) {
 		if page.IsClosed() {
 			break
 		}
@@ -142,14 +201,12 @@ func (bot *BrowserBot) Run(url string, p *proxy.Proxy, minDuration int) error {
 			bot.humanMouseMove(page)
 		case 2: // Pause
 			time.Sleep(time.Duration(rand.Intn(3)+1) * time.Second)
-		case 3: // Select text (simplified)
-			// ... implementation omitted for brevity, can add later
+		case 3: // Click random element (New)
+			bot.clickRandomElement(page)
 		}
 
 		time.Sleep(time.Duration(rand.Intn(2000)+500) * time.Millisecond)
 	}
-
-	return nil
 }
 
 func (bot *BrowserBot) humanMouseMove(page playwright.Page) {
@@ -163,4 +220,23 @@ func (bot *BrowserBot) humanMouseMove(page playwright.Page) {
 	page.Mouse().Move(float64(x), float64(y), playwright.MouseMoveOptions{
 		Steps: playwright.Int(rand.Intn(20) + 10),
 	})
+}
+
+func (bot *BrowserBot) clickRandomElement(page playwright.Page) {
+	// Try to find clickable elements and click one
+	// This is a simple heuristic
+	handle, err := page.QuerySelector("a, button, input[type='submit']")
+	if err == nil && handle != nil {
+		// Move to it first
+		box, err := handle.BoundingBox()
+		if err == nil && box != nil {
+			page.Mouse().Move(box.X+box.Width/2, box.Y+box.Height/2, playwright.MouseMoveOptions{
+				Steps: playwright.Int(10),
+			})
+			// Click
+			handle.Click(playwright.ElementHandleClickOptions{
+				Delay: playwright.Float(float64(rand.Intn(100) + 50)),
+			})
+		}
+	}
 }

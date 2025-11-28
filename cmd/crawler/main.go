@@ -35,6 +35,7 @@ func main() {
 	fetcher := proxy.NewProxyFetcher()
 	// Initial load from disk
 	proxyPool.Initialize(true, targetURL)
+	defer proxyPool.SaveToDisk() // Save cleaned list on exit
 
 	if proxyPool.Size() < cfg.Threads {
 		log.Println("Proxy pool is low, fetching from APIs...")
@@ -52,13 +53,11 @@ func main() {
 	}
 	defer browserPool.Shutdown()
 
-	bot := browser.NewBrowserBot(browserPool)
-
 	// Worker Pool
 	var wg sync.WaitGroup
 	tasks := make(chan struct{}, cfg.Threads) // Semaphore channel
-	stopChan := make(chan struct{})
 
+	stopChan := make(chan struct{})
 	// Signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -71,11 +70,9 @@ func main() {
 
 	log.Println("Workers started...")
 
-	// Task counter for injecting no-proxy requests
-	taskCounter := 0
-	var counterLock sync.Mutex
-
 	// Main loop
+	log.Println("Starting batch processing...")
+
 loop:
 	for {
 		select {
@@ -90,82 +87,35 @@ loop:
 					defer wg.Done()
 					defer func() { <-tasks }()
 
-					// Increment counter and check if we should run without proxy
-					counterLock.Lock()
-					taskCounter++
-					useProxy := taskCounter%cfg.Threads != 0 // Every Nth task runs without proxy
-					counterLock.Unlock()
+					// Each worker gets its own bot instance, which will acquire a browser from the pool
+					bot := browser.NewBrowserBot(browserPool)
 
-					var p *proxy.Proxy
-					if useProxy {
-						// Get Proxy
-						p = proxyPool.GetProxy()
-						if p == nil {
-							log.Println("No proxies available, waiting...")
-							time.Sleep(5 * time.Second)
-							return
-						}
-					} else {
-						log.Println("Running task without proxy (direct connection)")
-					}
-
-					// Get Target
-					url := cfg.GetRandomTarget()
-					if url == "" {
-						log.Println("No targets available!")
+					// Acquire a proxy
+					p := proxyPool.GetProxy()
+					if p == nil {
+						log.Println("No proxies available, waiting...")
 						time.Sleep(5 * time.Second)
 						return
 					}
 
+					log.Printf("Using proxy %s for batch", p.String())
+
 					metrics.ActiveThreads.Inc()
-					defer metrics.ActiveThreads.Dec()
 
-					var err error
-					maxRetries := 3
+					start := time.Now()
+					// RunBatch opens all targets
+					err := bot.RunBatch(cfg.Targets, p, cfg.Duration)
+					duration := time.Since(start).Seconds()
+					metrics.SessionDuration.Observe(duration)
 
-					for i := 0; i < maxRetries; i++ {
-						// Acquire proxy if needed
-						if useProxy && p == nil {
-							p = proxyPool.GetProxy()
-							if p == nil {
-								log.Println("No proxies available, waiting...")
-								time.Sleep(5 * time.Second)
-								// If we can't get a proxy, we can't proceed with this attempt
-								continue
-							}
-						}
-
-						start := time.Now()
-						err = bot.Run(url, p, cfg.Duration)
-						duration := time.Since(start).Seconds()
-						metrics.SessionDuration.Observe(duration)
-
-						if err == nil {
-							log.Printf("Task completed for %s", url)
-							metrics.TasksCompleted.Inc()
-							break // Success, exit retry loop
-						}
-
-						// Handle failure
-						log.Printf("Attempt %d/%d failed for %s: %v", i+1, maxRetries, url, err)
-						
-						if p != nil {
-							proxyPool.MarkFailed(*p)
-							p = nil // Reset proxy so we get a new one next time
-						}
-
-						if !useProxy {
-							// If not using proxy, retrying might not help if site is down, but let's try once more or break
-							break
-						}
-						
-						// Small delay before retry
-						time.Sleep(2 * time.Second)
-					}
+					metrics.ActiveThreads.Dec()
 
 					if err != nil {
-						log.Printf("Task permanently failed after %d attempts: %v", maxRetries, err)
-						metrics.TasksFailed.Inc()
+						log.Printf("Batch finished with error: %v", err)
+						proxyPool.MarkFailed(*p)
+					} else {
+						log.Println("Batch completed successfully")
+						metrics.TasksCompleted.Inc()
 					}
 				}()
 			case <-stopChan:
