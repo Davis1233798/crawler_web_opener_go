@@ -21,6 +21,8 @@ type Config struct {
 	MetricsPort     int
 	ScrapyType      string
 	NoProxyMode     bool
+	RunOnce         bool
+	SelfDestruct    bool
 	Targets         []string
 }
 
@@ -51,6 +53,8 @@ func (c *Config) load() {
 	c.MetricsPort = getEnvAsInt("METRICS_PORT", 8000)
 	c.ScrapyType = getEnv("SCRAPY_TYPE", "ALL")
 	c.NoProxyMode = getEnvAsBool("NO_PROXY_MODE", false)
+	c.RunOnce = getEnvAsBool("RUN_ONCE", false)
+	c.SelfDestruct = getEnvAsBool("SELF_DESTRUCT", false)
 
 	c.loadTargets()
 }

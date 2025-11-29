@@ -18,6 +18,7 @@ func main() {
 	project := flag.String("project", "", "GCP Project ID")
 	zone := flag.String("zone", "us-central1-a", "GCP Zone")
 	dryRun := flag.Bool("dry-run", false, "Print commands without executing")
+	runOnce := flag.Bool("run-once", false, "Run tasks once and self-destruct")
 
 	flag.Parse()
 
@@ -39,10 +40,16 @@ func main() {
 
 		go func(name string) {
 			defer wg.Done()
-			createVM(name, *image, *project, *zone, *dryRun)
+			createVM(name, *image, *project, *zone, *dryRun, *runOnce)
 		}(instanceName)
 	}
 	wg.Wait()
+
+	if *runOnce {
+		log.Println("VMs created in Run-Once mode. They will self-destruct upon completion.")
+		log.Println("Exiting runner.")
+		return
+	}
 
 	log.Printf("All VMs created. Running for %d seconds...", *duration)
 	time.Sleep(time.Duration(*duration) * time.Second)
@@ -60,19 +67,25 @@ func main() {
 	log.Println("All VMs deleted. Done.")
 }
 
-func createVM(name, image, project, zone string, dryRun bool) {
+func createVM(name, image, project, zone string, dryRun, runOnce bool) {
 	// gcloud compute instances create-with-container <name> \
 	// --project=<project> --zone=<zone> \
 	// --container-image=<image> \
 	// --container-env=NO_PROXY_MODE=true
+
+	envVars := "NO_PROXY_MODE=true"
+	if runOnce {
+		envVars += ",RUN_ONCE=true,SELF_DESTRUCT=true"
+	}
 
 	args := []string{
 		"compute", "instances", "create-with-container", name,
 		"--project", project,
 		"--zone", zone,
 		"--container-image", image,
-		"--container-env", "NO_PROXY_MODE=true",
-		"--quiet", // Non-interactive
+		"--container-env", envVars,
+		"--quiet",                                                    // Non-interactive
+		"--scopes", "https://www.googleapis.com/auth/cloud-platform", // Needed for self-destruct
 	}
 
 	cmd := exec.Command("gcloud", args...)

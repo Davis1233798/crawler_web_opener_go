@@ -1,9 +1,13 @@
 package main
 
 import (
+	"io"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -81,8 +85,14 @@ func main() {
 	var counterLock sync.Mutex
 
 	// Main loop
+	tasksScheduled := 0
 loop:
 	for {
+		if cfg.RunOnce && tasksScheduled >= cfg.Threads {
+			log.Println("RunOnce mode: All tasks scheduled. Waiting for completion...")
+			break loop
+		}
+
 		select {
 		case <-stopChan:
 			break loop
@@ -90,6 +100,7 @@ loop:
 			// Try to start a task if slots available
 			select {
 			case tasks <- struct{}{}:
+				tasksScheduled++
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
@@ -183,5 +194,61 @@ loop:
 	}
 
 	wg.Wait()
+	log.Println("All tasks completed.")
+
+	if cfg.SelfDestruct {
+		selfDestruct()
+	}
+
 	log.Println("Shutdown complete.")
+}
+
+func selfDestruct() {
+	log.Println("Self-destruct sequence initiated...")
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Printf("Error getting hostname: %v", err)
+		return
+	}
+
+	// We assume the hostname is the instance name.
+	// We try to delete the instance. We need the zone.
+	// We can try to fetch zone from metadata server, or just try without it (gcloud might prompt or fail).
+	// To make it robust, let's try to get zone from metadata.
+
+	zone := fetchZone()
+	args := []string{"compute", "instances", "delete", hostname, "--quiet"}
+	if zone != "" {
+		args = append(args, "--zone", zone)
+	}
+
+	log.Printf("Executing: gcloud %s", strings.Join(args, " "))
+	cmd := exec.Command("gcloud", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Error self-destructing: %v\nOutput: %s", err, string(output))
+	} else {
+		log.Println("Self-destruct command issued successfully.")
+	}
+}
+
+func fetchZone() string {
+	// curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/zone
+	client := &http.Client{Timeout: 2 * time.Second}
+	req, _ := http.NewRequest("GET", "http://metadata.google.internal/computeMetadata/v1/instance/zone", nil)
+	req.Header.Add("Metadata-Flavor", "Google")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	// Zone is returned as "projects/PROJECT_NUM/zones/ZONE"
+	parts := strings.Split(string(body), "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return ""
 }
