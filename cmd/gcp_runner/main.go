@@ -19,8 +19,8 @@ func main() {
 	zone := flag.String("zone", "us-central1-a", "GCP Zone")
 	dryRun := flag.Bool("dry-run", false, "Print commands without executing")
 	runOnce := flag.Bool("run-once", false, "Run tasks once and self-destruct")
-	continuous := flag.Bool("continuous", false, "Run in a continuous loop (unattended mode)")
-	interval := flag.Int("interval", 300, "Interval in seconds between batches in continuous mode")
+	continuous := flag.Bool("continuous", false, "Run in continuous mode (loop forever)")
+	interval := flag.Int("interval", 300, "Interval between batches in seconds (for continuous mode)")
 
 	flag.Parse()
 
@@ -30,54 +30,53 @@ func main() {
 		os.Exit(1)
 	}
 
-	for {
-		runBatch(*image, *project, *zone, *count, *duration, *dryRun, *runOnce)
-
-		if !*continuous {
-			break
-		}
-		log.Printf("Continuous mode: Waiting %d seconds before next batch...", *interval)
-		time.Sleep(time.Duration(*interval) * time.Second)
-	}
-}
-
-func runBatch(image, project, zone string, count, duration int, dryRun, runOnce bool) {
 	var wg sync.WaitGroup
-	instanceNames := make([]string, 0, count)
 
-	// Create VMs
-	log.Printf("Creating %d VMs...", count)
-	for i := 0; i < count; i++ {
-		instanceName := fmt.Sprintf("crawler-worker-%d-%d", time.Now().Unix(), i)
-		instanceNames = append(instanceNames, instanceName)
-		wg.Add(1)
+	for {
+		instanceNames := make([]string, 0, *count)
 
-		go func(name string) {
-			defer wg.Done()
-			createVM(name, image, project, zone, dryRun, runOnce)
-		}(instanceName)
+		// Create VMs
+		log.Printf("Creating %d VMs...", *count)
+		for i := 0; i < *count; i++ {
+			instanceName := fmt.Sprintf("crawler-worker-%d-%d", time.Now().Unix(), i)
+			instanceNames = append(instanceNames, instanceName)
+			wg.Add(1)
+
+			go func(name string) {
+				defer wg.Done()
+				createVM(name, *image, *project, *zone, *dryRun, *runOnce || *continuous)
+			}(instanceName)
+		}
+		wg.Wait()
+
+		if *runOnce {
+			log.Println("VMs created in Run-Once mode. They will self-destruct upon completion.")
+			log.Println("Exiting runner.")
+			return
+		}
+
+		if *continuous {
+			log.Printf("Batch created. Waiting for %d seconds before next batch...", *interval)
+			time.Sleep(time.Duration(*interval) * time.Second)
+			continue
+		}
+
+		log.Printf("All VMs created. Running for %d seconds...", *duration)
+		time.Sleep(time.Duration(*duration) * time.Second)
+
+		// Delete VMs
+		log.Println("Time's up! Deleting VMs...")
+		for _, name := range instanceNames {
+			wg.Add(1)
+			go func(n string) {
+				defer wg.Done()
+				deleteVM(n, *project, *zone, *dryRun)
+			}(name)
+		}
+		wg.Wait()
+		log.Println("All VMs deleted. Done.")
+		break // Exit loop if not continuous
 	}
-	wg.Wait()
-
-	if runOnce {
-		log.Println("VMs created in Run-Once mode. They will self-destruct upon completion.")
-		return
-	}
-
-	log.Printf("All VMs created. Running for %d seconds...", duration)
-	time.Sleep(time.Duration(duration) * time.Second)
-
-	// Delete VMs
-	log.Println("Time's up! Deleting VMs...")
-	for _, name := range instanceNames {
-		wg.Add(1)
-		go func(n string) {
-			defer wg.Done()
-			deleteVM(n, project, zone, dryRun)
-		}(name)
-	}
-	wg.Wait()
-	log.Println("All VMs deleted. Batch done.")
 }
 
 func createVM(name, image, project, zone string, dryRun, runOnce bool) {

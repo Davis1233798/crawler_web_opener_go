@@ -83,9 +83,7 @@ docker exec -it c12345 /bin/bash
   -project YOUR_PROJECT_ID \
   -zone us-central1-a \
   -count 10 \
-  -run-once \
-  -continuous \
-  -interval 300
+  -run-once
 
 # 若使用 Docker Hub:
 /app/gcp_runner \
@@ -93,9 +91,7 @@ docker exec -it c12345 /bin/bash
   -project YOUR_PROJECT_ID \
   -zone us-central1-a \
   -count 10 \
-  -run-once \
-  -continuous \
-  -interval 300
+  -run-once
 ```
 
 **參數詳解**:
@@ -104,15 +100,50 @@ docker exec -it c12345 /bin/bash
 - `-zone`: 欲建立 Worker VM 的區域 (預設 us-central1-a)。
 - `-count`: 要建立的 Worker VM 數量 (例如 10 台)。
 - `-run-once`: **關鍵參數**。啟用此參數後，Worker VM 會在執行完任務後自動自我銷毀。
-- `-continuous`: **無人值守模式**。啟用後，程式會無限循環建立 VM。
-- `-interval`: 在連續模式下，每批次之間的等待時間 (秒)。
 
-## 關於 Docker Hub 與 OS
+---
 
-Docker 鏡像本身就包含了作業系統 (Base Image)。本專案使用 `mcr.microsoft.com/playwright:v1.40.0-jammy` 作為基底，它是基於 **Ubuntu 22.04 LTS (Jammy Jellyfish)** 的。
+## 無人值守與持續運行模式 (Unattended & Continuous Mode)
 
-當您將鏡像推送到 Docker Hub 並在 GCP 上使用時，GCP 會下載這個包含完整 Ubuntu OS 環境的鏡像來啟動容器。因此，您不需要擔心底層 VM 的 OS 設定，一切都在鏡像中定義好了。
+若您希望系統能自動、持續地生成 VM 進行爬取，直到您手動停止為止，請使用此模式。
 
+### 1. 使用 `-continuous` 參數
+
+在 `gcp_runner` 中加入 `-continuous` 與 `-interval` 參數：
+
+- `-continuous`: 啟用持續模式。程式會無限循環，每隔一段時間生成一批新的 Worker VM。
+- `-interval`: 每批次之間的間隔秒數 (例如 300 秒)。
+
+### 2. 背景執行 (Daemon Mode)
+
+為了讓主控端在您斷開 SSH 連線後仍能繼續運作，請使用 Docker 的 `-d` (Detached) 模式啟動主控容器。
+
+```bash
+# 1. 啟動主控容器於背景 (Detached Mode)
+docker run -d --name crawler-master-daemon \
+  gcr.io/YOUR_PROJECT_ID/crawler-integrated \
+  /app/gcp_runner \
+  -image gcr.io/YOUR_PROJECT_ID/crawler-integrated \
+  -project YOUR_PROJECT_ID \
+  -zone us-central1-a \
+  -count 5 \
+  -continuous \
+  -interval 600
+
+# 2. 查看日誌
+docker logs -f crawler-master-daemon
+
+# 3. 停止運行
+docker stop crawler-master-daemon
+```
+
+**運作流程**:
+1.  主控容器啟動，執行 `gcp_runner`。
+2.  `gcp_runner` 建立 5 台 Worker VM。
+3.  Worker VM 啟動，執行爬蟲任務，完成後**自我銷毀**。
+4.  `gcp_runner` 等待 600 秒。
+5.  `gcp_runner` 再次建立 5 台新的 Worker VM... (無限循環)
+6.  直到您執行 `docker stop` 為止。
 
 ---
 
