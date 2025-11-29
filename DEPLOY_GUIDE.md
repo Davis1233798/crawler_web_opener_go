@@ -22,12 +22,20 @@
 
 ### 1. 構建並推送 Docker 鏡像
 
-在您的開發環境中，構建 Docker 鏡像並推送到 Google Container Registry (GCR)。
+您可以選擇使用 **Google Container Registry (GCR)** 或 **Docker Hub**。
 
+#### 選項 A: 使用 GCR (推薦用於 GCP)
 ```bash
 # 請將 YOUR_PROJECT_ID 替換為您的 GCP 專案 ID
 docker build -t gcr.io/YOUR_PROJECT_ID/crawler-integrated .
 docker push gcr.io/YOUR_PROJECT_ID/crawler-integrated
+```
+
+#### 選項 B: 使用 Docker Hub
+```bash
+# 請將 YOUR_USERNAME 替換為您的 Docker Hub 帳號
+docker build -t YOUR_USERNAME/crawler-integrated .
+docker push YOUR_USERNAME/crawler-integrated
 ```
 
 ### 2. 啟動主控端 VM (Master VM)
@@ -36,11 +44,21 @@ docker push gcr.io/YOUR_PROJECT_ID/crawler-integrated
 
 **權限要求**: 主控端 VM 的 Service Account 必須擁有 `Compute Admin` (或至少能建立/刪除實例) 的權限。
 
+#### 若使用 GCR:
 ```bash
 gcloud compute instances create-with-container crawler-master \
     --project YOUR_PROJECT_ID \
     --zone us-central1-a \
     --container-image gcr.io/YOUR_PROJECT_ID/crawler-integrated \
+    --scopes https://www.googleapis.com/auth/cloud-platform
+```
+
+#### 若使用 Docker Hub:
+```bash
+gcloud compute instances create-with-container crawler-master \
+    --project YOUR_PROJECT_ID \
+    --zone us-central1-a \
+    --container-image YOUR_USERNAME/crawler-integrated \
     --scopes https://www.googleapis.com/auth/cloud-platform
 ```
 
@@ -59,12 +77,25 @@ docker ps
 docker exec -it c12345 /bin/bash
 
 # 3. 執行部署指令
+# 若使用 GCR:
 /app/gcp_runner \
   -image gcr.io/YOUR_PROJECT_ID/crawler-integrated \
   -project YOUR_PROJECT_ID \
   -zone us-central1-a \
   -count 10 \
-  -run-once
+  -run-once \
+  -continuous \
+  -interval 300
+
+# 若使用 Docker Hub:
+/app/gcp_runner \
+  -image YOUR_USERNAME/crawler-integrated \
+  -project YOUR_PROJECT_ID \
+  -zone us-central1-a \
+  -count 10 \
+  -run-once \
+  -continuous \
+  -interval 300
 ```
 
 **參數詳解**:
@@ -73,6 +104,15 @@ docker exec -it c12345 /bin/bash
 - `-zone`: 欲建立 Worker VM 的區域 (預設 us-central1-a)。
 - `-count`: 要建立的 Worker VM 數量 (例如 10 台)。
 - `-run-once`: **關鍵參數**。啟用此參數後，Worker VM 會在執行完任務後自動自我銷毀。
+- `-continuous`: **無人值守模式**。啟用後，程式會無限循環建立 VM。
+- `-interval`: 在連續模式下，每批次之間的等待時間 (秒)。
+
+## 關於 Docker Hub 與 OS
+
+Docker 鏡像本身就包含了作業系統 (Base Image)。本專案使用 `mcr.microsoft.com/playwright:v1.40.0-jammy` 作為基底，它是基於 **Ubuntu 22.04 LTS (Jammy Jellyfish)** 的。
+
+當您將鏡像推送到 Docker Hub 並在 GCP 上使用時，GCP 會下載這個包含完整 Ubuntu OS 環境的鏡像來啟動容器。因此，您不需要擔心底層 VM 的 OS 設定，一切都在鏡像中定義好了。
+
 
 ---
 
