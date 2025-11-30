@@ -8,4 +8,22 @@
 - [x] Implement headless/headed mode toggle <!-- id: 3 -->
 - [x] Implement human simulation (clicking) <!-- id: 4 -->
 - [x] Implement auto-removal of failed proxies from disk <!-- id: 8 -->
-- [ ] Verify implementation <!-- id: 5 -->
+- [x] Verify implementation <!-- id: 5 -->
+- [x] Fix git tracking of .env and sync repository <!-- id: 9 -->
+- [x] Create `no-proxy` branch and implement direct connection mode <!-- id: 10 -->
+- [x] Create `vless-support` branch and implement VLESS handling <!-- id: 11 -->
+    - [x] Implement VLESS string parsing <!-- id: 12 -->
+    - [x] Implement Xray config generation <!-- id: 13 -->
+    - [x] Implement Xray process management <!-- id: 14 -->
+    - [x] Integrate with crawler <!-- id: 15 -->
+- [x] Create `no-proxy-docker-gcp` branch <!-- id: 16 -->
+    - [x] Create Dockerfile <!-- id: 17 -->
+    - [x] Create GCP deployment scripts (`deploy.sh`, `deploy.ps1`) <!-- id: 18 -->
+    - [x] Document usage (Chinese) <!-- id: 19 -->
+- [x] Implement Mother VM (Controller) Solution <!-- id: 20 -->
+    - [x] Create `controller_loop.sh` (The loop script) <!-- id: 21 -->
+    - [x] Create `mother_vm_setup.sh` (Provisioning script) <!-- id: 22 -->
+    - [x] Update documentation <!-- id: 23 -->
+- [x] Implement IaC with Terraform <!-- id: 24 -->
+    - [x] Create Terraform configuration files (`main.tf`, `variables.tf`, etc.) <!-- id: 25 -->
+    - [x] Document Terraform usage <!-- id: 26 -->

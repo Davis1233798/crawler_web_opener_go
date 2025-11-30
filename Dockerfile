@@ -1,31 +1,36 @@
+# Build Stage
 FROM golang:1.21-bullseye AS builder
 
 WORKDIR /app
 
 # Copy go mod and sum files
-COPY go.mod ./
-# COPY go.sum ./ # Uncomment when go.sum exists
-# RUN go mod download
+COPY go.mod go.sum ./
+RUN go mod download
 
+# Copy source code
 COPY . .
 
-# Build the application
-RUN go build -o crawler ./cmd/crawler
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux go build -o crawler ./cmd/crawler
 
-# Final stage
+# Final Stage
 FROM mcr.microsoft.com/playwright:v1.40.0-jammy
 
 WORKDIR /app
 
-# Install Go (optional, if we just run the binary we might not need full go, 
-# but we need to ensure glibc compatibility. The builder stage handles compilation)
-# Actually, we just need the binary and runtime deps.
-# Playwright image is based on Ubuntu, so it should be fine.
-
+# Copy binary from builder
 COPY --from=builder /app/crawler .
 COPY --from=builder /app/target_site.txt .
-# COPY --from=builder /app/proxies.txt . # If you want to bundle proxies
+# We don't need proxies.txt or .env in the image necessarily if passed via env vars, 
+# but copying them for safety/defaults.
+COPY --from=builder /app/proxies.txt . 
 
-# Install dependencies if needed (Playwright image has browsers)
+# Install any additional dependencies if needed (Playwright image has most)
 
+# Set environment variables
+ENV HEADLESS=true
+ENV THREADS=2
+ENV DURATION=60
+
+# Entrypoint
 CMD ["./crawler"]

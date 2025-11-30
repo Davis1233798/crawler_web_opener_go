@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -12,38 +13,45 @@ import (
 	"github.com/Davis1233798/crawler-go/internal/config"
 	"github.com/Davis1233798/crawler-go/internal/metrics"
 	"github.com/Davis1233798/crawler-go/internal/proxy"
+	"github.com/Davis1233798/crawler-go/internal/vless"
 )
 
 func main() {
 	cfg := config.GetConfig()
 
-	log.Println("Starting Crawler (Go Version)")
+	log.Println("Starting Crawler (Go Version) - VLESS SUPPORT MODE")
 	log.Printf("Threads: %d, Duration: %ds, Headless: %v", cfg.Threads, cfg.Duration, cfg.Headless)
 
 	// Start Metrics
 	metrics.StartMetricsServer(cfg.MetricsPort)
 
-	// Init Proxy Pool
-	proxyPool := proxy.NewMemoryProxyPool("proxies.txt", cfg.Threads*2)
-	// Assuming targetURL from first target for verification
-	targetURL := ""
-	if len(cfg.Targets) > 0 {
-		targetURL = cfg.Targets[0]
+	// VLESS Setup
+	vlessContent, err := os.ReadFile("vless.txt")
+	if err != nil {
+		log.Fatalf("Failed to read vless.txt: %v. Please provide a valid VLESS URI in vless.txt", err)
+	}
+	vlessStr := strings.TrimSpace(string(vlessContent))
+
+	vm := vless.NewManager("xray.exe", 10808) // Assuming xray.exe in cwd or path, port 10808
+	vConfig, err := vm.ParseVless(vlessStr)
+	if err != nil {
+		log.Fatalf("Failed to parse VLESS URI: %v", err)
 	}
 
-	// Fetch proxies if pool is empty or small
-	fetcher := proxy.NewProxyFetcher()
-	// Initial load from disk
-	proxyPool.Initialize(true, targetURL)
-	defer proxyPool.SaveToDisk() // Save cleaned list on exit
+	if err := vm.GenerateConfig(vConfig); err != nil {
+		log.Fatalf("Failed to generate Xray config: %v", err)
+	}
 
-	if proxyPool.Size() < cfg.Threads {
-		log.Println("Proxy pool is low, fetching from APIs...")
-		newProxies := fetcher.FetchAll(100)
-		proxyPool.AddProxies(newProxies)
-		// Save to disk after adding
-		proxyPool.SaveToDisk()
-		log.Printf("Proxy pool now has %d proxies", proxyPool.Size())
+	if err := vm.Start(); err != nil {
+		log.Fatalf("Failed to start Xray: %v. Ensure xray.exe is available.", err)
+	}
+	defer vm.Stop()
+
+	log.Println("Xray started on 127.0.0.1:10808")
+
+	// Create a single proxy object pointing to local Xray
+	localProxy := &proxy.Proxy{
+		Server: "socks5://127.0.0.1:10808",
 	}
 
 	// Init Browser Pool
@@ -55,10 +63,9 @@ func main() {
 
 	// Worker Pool
 	var wg sync.WaitGroup
-	tasks := make(chan struct{}, cfg.Threads) // Semaphore channel
+	tasks := make(chan struct{}, cfg.Threads)
 
 	stopChan := make(chan struct{})
-	// Signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -79,7 +86,6 @@ loop:
 		case <-stopChan:
 			break loop
 		default:
-			// Try to start a task if slots available
 			select {
 			case tasks <- struct{}{}:
 				wg.Add(1)
@@ -87,32 +93,22 @@ loop:
 					defer wg.Done()
 					defer func() { <-tasks }()
 
-					// Each worker gets its own bot instance, which will acquire a browser from the pool
 					bot := browser.NewBrowserBot(browserPool)
 
-					// Acquire a proxy
-					p := proxyPool.GetProxy()
-					if p == nil {
-						log.Println("No proxies available, waiting...")
-						time.Sleep(5 * time.Second)
-						return
-					}
-
-					log.Printf("Using proxy %s for batch", p.String())
+					log.Println("Starting batch (VLESS Proxy)")
 
 					metrics.ActiveThreads.Inc()
-
 					start := time.Now()
-					// RunBatch opens all targets
-					err := bot.RunBatch(cfg.Targets, p, cfg.Duration)
+
+					// Use local VLESS proxy
+					err := bot.RunBatch(cfg.Targets, localProxy, cfg.Duration)
+
 					duration := time.Since(start).Seconds()
 					metrics.SessionDuration.Observe(duration)
-
 					metrics.ActiveThreads.Dec()
 
 					if err != nil {
 						log.Printf("Batch finished with error: %v", err)
-						proxyPool.MarkFailed(*p)
 					} else {
 						log.Println("Batch completed successfully")
 						metrics.TasksCompleted.Inc()
