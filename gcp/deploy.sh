@@ -54,11 +54,22 @@ for REGION in "${REGIONS[@]}"; do
         --machine-type=e2-micro \
         --scopes=https://www.googleapis.com/auth/cloud-platform \
         --metadata=startup-script="#!/bin/bash
-        gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+        # Configure Docker Auth for COS
+        docker-credential-gcr configure-docker --registries=us-central1-docker.pkg.dev
+        
+        # Run Crawler
         docker run --rm -e THREADS=2 -e DURATION=60 -e HEADLESS=true $IMAGE_NAME
+        
         echo 'Crawler finished. Self-destructing in 60s...'
         sleep 60
-        gcloud compute instances delete $INSTANCE_NAME --zone=$ZONE --quiet
+        
+        # Self Destruct via API
+        TOKEN=\$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+        PROJECT=\$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id')
+        ZONE=\$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/zone' | awk -F/ '{print \$NF}')
+        NAME=\$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/name')
+        
+        curl -X DELETE -H \"Authorization: Bearer \$TOKEN\" \"https://compute.googleapis.com/compute/v1/projects/\$PROJECT/zones/\$ZONE/instances/\$NAME\"
         " \
         --tags=crawler \
         --preemptible # Use preemptible for lower cost
