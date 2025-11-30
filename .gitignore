@@ -1,1 +1,15 @@
+# Binaries
+crawler
+crawler.exe
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Secrets
 .env
+
+# Logs
+*.log
