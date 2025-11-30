@@ -9,15 +9,19 @@ if [ -z "$PROJECT_ID" ]; then
     exit 1
 fi
 
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
 IMAGE_NAME="us-central1-docker.pkg.dev/$PROJECT_ID/crawler-repo/crawler-no-proxy:latest"
 
 # 0. Sync latest code
-echo "Pulling latest code..."
+log "Pulling latest code..."
 git pull origin no-proxy-docker-gcp
 
 
 # 1. Build and Push Docker Image
-echo "Building and pushing Docker image to $IMAGE_NAME..."
+log "Building and pushing Docker image to $IMAGE_NAME..."
 # Ensure we are in the root directory
 cd ..
 # Configure docker credential helper for gcloud
@@ -33,14 +37,14 @@ cd gcp
 # For testing, let's pick a few diverse ones:
 REGIONS=("us-central1" "europe-west1" "asia-northeast1")
 
-echo "Deploying to regions: ${REGIONS[@]}"
+log "Deploying to regions: ${REGIONS[@]}"
 
 # 3. Deploy to each region
 for REGION in "${REGIONS[@]}"; do
     INSTANCE_NAME="crawler-$REGION-$(date +%s)"
     ZONE="$REGION-a" # Simple zone selection
 
-    echo "Deploying instance $INSTANCE_NAME in $ZONE..."
+    log "Creating instance $INSTANCE_NAME in $ZONE..."
 
     gcloud compute instances create $INSTANCE_NAME \
         --project=$PROJECT_ID \
@@ -60,10 +64,10 @@ for REGION in "${REGIONS[@]}"; do
         --preemptible # Use preemptible for lower cost
 
     if [ $? -eq 0 ]; then
-        echo "Successfully deployed to $REGION"
+        log "Successfully deployed to $REGION. Instance: $INSTANCE_NAME"
     else
-        echo "Failed to deploy to $REGION"
+        log "Failed to deploy to $REGION"
     fi
 done
 
-echo "Deployment complete. Instances will self-destruct after running."
+log "Deployment round complete. Instances will self-destruct after running."
