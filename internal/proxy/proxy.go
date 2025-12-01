@@ -508,8 +508,8 @@ func (p *MemoryProxyPool) UpdateProxiesFromIPs(baseLink string, ips []string) {
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(ips), func(i, j int) { ips[i], ips[j] = ips[j], ips[i] })
 
-	// Limit to max 50 IPs to prevent starting too many Xray instances
-	maxIPs := 50
+	// Limit to max 10 IPs to prevent starting too many Xray instances
+	maxIPs := 10
 	if len(ips) > maxIPs {
 		log.Printf("Limiting fetched IPs from %d to %d", len(ips), maxIPs)
 		ips = ips[:maxIPs]
