@@ -18,7 +18,7 @@ type Config struct {
 	Duration          int
 	Headless          bool
 	BrowserPoolSize   int
-	MetricsPort       string // Changed to string to match main.go usage
+	MetricsPort       int
 	DiscordWebhookURL string
 	Targets           []string
 	NavigationTimeout int
@@ -48,7 +48,7 @@ func (c *Config) load() {
 	c.Duration = getEnvAsInt("DURATION", 30)
 	c.Headless = getEnvAsBool("HEADLESS", false)
 	c.BrowserPoolSize = getEnvAsInt("BROWSER_POOL_SIZE", 5)
-	c.MetricsPort = getEnv("METRICS_PORT", "8080")
+	c.MetricsPort = getEnvAsInt("METRICS_PORT", 8080)
 	c.DiscordWebhookURL = getEnv("DISCORD_WEBHOOK_URL", "")
 	c.NavigationTimeout = getEnvAsInt("NAVIGATION_TIMEOUT", 30)
 
