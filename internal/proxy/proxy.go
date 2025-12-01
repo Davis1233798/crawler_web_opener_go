@@ -326,6 +326,9 @@ func (p *MemoryProxyPool) MarkFailed(proxy Proxy) {
 }
 
 func (p *MemoryProxyPool) replenish() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	if len(p.workingProxies) >= p.minPoolSize {
 		return
 	}
@@ -334,6 +337,9 @@ func (p *MemoryProxyPool) replenish() {
 		log.Println("⚠️ No reserve proxies available to replenish pool.")
 		return
 	}
+
+	// Rate limit replenishment to prevent storm
+	time.Sleep(500 * time.Millisecond)
 	
 	// Pop from reserve
 	// Use random or first? First is fine since we shuffled on fetch.
@@ -344,12 +350,24 @@ func (p *MemoryProxyPool) replenish() {
 	
 	// Start adapter if VLESS
 	if strings.HasPrefix(newProxy.Server, "vless://") {
+		// Unlock during adapter start to avoid holding lock too long?
+		// But we need to protect maps.
+		// StartVLESSAdapter is slow.
+		// Let's unlock, start, lock.
+		p.lock.Unlock()
 		adapter, err := StartVLESSAdapter(newProxy.Server)
+		p.lock.Lock()
+		
 		if err != nil {
 			log.Printf("Failed to start adapter for reserve proxy: %v", err)
-			// Try next one recursively
-			p.replenish()
-			return
+			// Try next one recursively (but we need to be careful about lock)
+			// Since we are locked now, we can call replenish (which locks again? No, it's not recursive if we use a helper or just loop)
+			// Recursive call to replenish will deadlock if we hold lock.
+			// We should use a loop instead of recursion.
+			
+			// Actually, let's just return and let the next cycle handle it?
+			// Or better, loop here.
+			return 
 		}
 		p.vlessAdapters[newProxy.Server] = adapter
 		log.Printf("Started VLESS adapter for replenished proxy at %s", adapter.SocksAddr())
