@@ -199,7 +199,7 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 
 			log.Printf("Navigating to %s", targetURL)
 			if _, err := page.Goto(targetURL, playwright.PageGotoOptions{
-				Timeout:   playwright.Float(60000),
+				Timeout:   playwright.Float(30000),                   // Reduced to 30s
 				WaitUntil: playwright.WaitUntilStateDomcontentloaded,
 			}); err != nil {
 				log.Printf("Navigation failed for %s: %v", targetURL, err)
@@ -207,12 +207,15 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				return
 			}
 
+			log.Printf("⏳ Activity started for %s (%ds)", targetURL, minDuration)
 			bot.simulateActivity(page, minDuration)
+			log.Printf("✅ Activity finished for %s", targetURL)
 		}(u)
 	}
 
 	wg.Wait()
 	close(errChan)
+	log.Println("Batch finished, closing browser...")
 
 	return nil
 }
