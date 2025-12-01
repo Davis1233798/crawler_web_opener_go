@@ -514,6 +514,8 @@ func (p *MemoryProxyPool) AddProxies(proxies []string) {
 						}
 						p.vlessAdapters[proxy.Server] = adapter
 						log.Printf("Started VLESS adapter at %s", adapter.SocksAddr())
+						// Stagger startup to prevent connection burst
+						time.Sleep(100 * time.Millisecond)
 					}
 				}
 				p.workingProxies = append(p.workingProxies, *proxy)
