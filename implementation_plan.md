@@ -1,25 +1,28 @@
-# Implementation Plan - Remove Base VLESS Link
+# Implementation Plan - Fix SNI in VLESS IP Update
 
-The goal is to prevent the crawler from using the original domain-based VLESS link, which causes `connection reset by peer` errors on the remote server. We will modify the proxy pool to remove this link once preferred IPs are successfully fetched.
+The goal is to ensure that when we replace the VLESS address with a fetched IP, we preserve the original domain for SNI (Server Name Indication) and Host header. This is critical for VLESS connections behind CDNs (like Cloudflare) where the IP alone is insufficient.
 
 ## User Review Required
 > [!IMPORTANT]
-> This change causes the "base" VLESS link (defined in `.env`) to be removed from the active proxy pool once IPs are fetched. This is intended behavior to avoid using the blocked domain.
+> This change modifies how VLESS links are generated from fetched IPs. It explicitly adds `sni` and `host` parameters if they are missing, using the original domain from the base link.
 
 ## Proposed Changes
 
 ### Proxy Package
 #### [MODIFY] [proxy.go](file:///c:/Users/solidityDeveloper/go_projects/crawler_web_opener_go/internal/proxy/proxy.go)
-- Add `RemoveProxy(proxyStr string)` method to `MemoryProxyPool`.
-- Update `UpdateProxiesFromIPs` to call `RemoveProxy(baseLink)` after adding new proxies.
+- Update `UpdateProxiesFromIPs` method.
+- Before replacing `u.Host` with the IP, extract the original hostname.
+- Check if `sni` query parameter is present. If not, set it to the original hostname.
+- Check if `host` query parameter is present. If not, set it to the original hostname.
+- Reconstruct the URL query string.
 
 ## Verification Plan
 
 ### Automated Tests
-- None (Manual verification required as this depends on remote network conditions).
+- Create a unit test `TestUpdateProxiesFromIPs_SNI` in `proxy_test.go`.
+- Verify that a base link without `sni` gets `sni` added when an IP is injected.
+- Verify that a base link *with* `sni` preserves the existing `sni`.
 
 ### Manual Verification
-- The user will need to deploy the changes to the remote server.
-- Run the crawler and observe logs.
-- Confirm that `[Error] ... failed to dial to ...workers.dev` stops appearing.
-- Confirm that "Removed base VLESS adapter" log appears.
+- Deploy to remote server.
+- Run crawler and check if connection errors resolve.

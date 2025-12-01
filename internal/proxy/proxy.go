@@ -519,6 +519,18 @@ func (p *MemoryProxyPool) UpdateProxiesFromIPs(baseLink string, ips []string) {
 			user := *u.User // Copy User info
 			newU.User = &user
 		}
+
+		// Preserve original host as SNI/Host if not present
+		q := newU.Query()
+		originalHost := u.Hostname()
+		
+		if q.Get("sni") == "" {
+			q.Set("sni", originalHost)
+		}
+		if q.Get("host") == "" {
+			q.Set("host", originalHost)
+		}
+		newU.RawQuery = q.Encode()
 		
 		newU.Host = ip // Set new host:port
 		

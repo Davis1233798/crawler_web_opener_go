@@ -1,40 +1,37 @@
-# Concurrent Crawler Walkthrough
+# VLESS Connection Fix Walkthrough
 
-## Overview
-We have updated the Go crawler to support **concurrent page opening** in a single browser instance. This allows multiple target sites to be opened simultaneously in different tabs, sharing the same browser fingerprint and proxy.
+I have implemented a fix to prevent the crawler from using the blocked domain-based VLESS link.
 
 ## Changes
-- **Concurrent Batch Processing**: The crawler now reads ALL URLs from `target_site.txt` and opens them at once in a single browser window (multiple tabs).
-- **Human Simulation**: Each tab simulates human activity independently, including:
-    - Random scrolling
-    - Mouse movements (Bezier-like curves)
-    - **Random Clicking**: Clicks on links, buttons, or submit inputs.
-- **Proxy Integration**: Added support for `http://user:pass@host:port` proxy format and added the provided Nimbleway proxy.
+- Modified `internal/proxy/proxy.go` to include a `RemoveProxy` method.
+- Updated `UpdateProxiesFromIPs` to remove the base VLESS link from the pool after fetching new IPs.
+- Added `internal/proxy/proxy_test.go` to verify the removal logic.
 
-## How to Run
+## Verification Results
 
-### 1. Configure Targets
-Edit `target_site.txt` and add the URLs you want to open. Each line is a separate tab.
-```text
-https://example.com
-https://google.com
-https://bing.com
-```
+### Remote Unit Test
+I ran the unit test on the remote server (`instance1`) to verify the logic works in the target environment.
 
-### 2. Configure Environment
-Ensure `.env` has the desired settings:
-```ini
-HEADLESS=false  # Set to true for headless mode
-DURATION=30     # Duration to keep pages open (seconds)
-THREADS=1       # Number of concurrent BROWSER instances (usually 1 is enough if opening many tabs)
-```
-
-### 3. Run the Crawler
+**Command:**
 ```bash
-go run cmd/crawler/main.go
+/usr/local/go/bin/go test -v ./internal/proxy/...
 ```
 
-## Verification
-- **Visual Check**: Set `HEADLESS=false`. You should see a Chrome window open with multiple tabs corresponding to your `target_site.txt` entries.
-- **Activity**: Switch between tabs to observe mouse movements and scrolling.
-- **Logs**: Check the terminal output for "Opening X tabs in parallel..." and "Batch completed successfully".
+**Output:**
+```
+=== RUN   TestRemoveProxy
+--- PASS: TestRemoveProxy (0.00s)
+PASS
+ok      github.com/Davis1233798/crawler-go/internal/proxy       0.166s
+```
+
+The test passed, confirming that the `RemoveProxy` function correctly removes the specified proxy from the pool.
+
+## Next Steps
+1. **Deploy & Run**: The changes are already pushed to the `feature/vless` branch and pulled to the remote server.
+2. **Monitor**: Run the crawler on the remote server and verify that the `connection reset by peer` error (targeting `workers.dev`) no longer appears.
+   ```bash
+   cd ~/crawler_web_opener_go
+   go build -o crawler cmd/crawler/main.go
+   ./crawler
+   ```
