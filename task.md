@@ -1,8 +1,17 @@
-# Optimizing Proxy Management
+# Task: Fix High Traffic and Stability Issues
 
-- [ ] Analyze `ip_fetcher.go` and `proxy.go` to identify bottlenecks <!-- id: 0 -->
-- [ ] Implement IP limit in `FetchPreferredIPs` (e.g., max 50) <!-- id: 1 -->
-- [ ] Implement background verification in `MemoryProxyPool` <!-- id: 2 -->
-- [ ] Update `RunBatch` to rely on verified proxies (or keep strict check as safety net) <!-- id: 3 -->
-- [ ] Verify changes with unit tests <!-- id: 4 -->
-- [ ] Deploy and monitor <!-- id: 5 -->
+- [x] Implement IP rotation with Reserve Pool
+- [x] Fix "Batch TIMED OUT" resource leak
+- [x] Add rate limiting to `replenish` function
+- [x] Add penalty delay for fast failures in `main.go`
+- [x] Optimize timeout recovery (immediate restart)
+- [x] Add Discord debug logging
+- [x] Fix `slice bounds out of range` panic
+- [x] Stagger VLESS adapter startup
+- [/] **Cleanup Zombie Processes**
+    - [ ] Kill all `xray` and `crawler` processes
+    - [ ] Verify no background traffic
+- [ ] **Verify Fix**
+    - [ ] Run with updated code
+    - [ ] Monitor Discord logs for loops
+    - [ ] Monitor Cloudflare dashboard

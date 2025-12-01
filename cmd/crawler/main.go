@@ -122,6 +122,18 @@ loop:
 						time.Sleep(2 * time.Second)
 						return
 					}
+					
+					// Ensure proxy is released even if panic occurs
+					defer proxyPool.ReleaseProxy(p)
+					
+					// Panic Recovery
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("🔥 Worker PANIC recovered: %v", r)
+							// Mark as failed? Maybe.
+							proxyPool.MarkFailed(*p)
+						}
+					}()
 
 					// 2. Create Bot with Manager
 					bot := browser.NewBrowserBot(browserManager)
@@ -130,8 +142,7 @@ loop:
 					log.Printf("Using proxy %s for batch", p.Server)
 					err := bot.RunBatch(cfg.Targets, p, cfg.Duration)
 					
-					// 4. Release Proxy
-					proxyPool.ReleaseProxy(p)
+					// 4. Release Proxy (Handled by defer)
 
 					if err != nil {
 						log.Printf("Batch finished with error: %v", err)

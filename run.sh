@@ -65,6 +65,11 @@ else
     echo "No existing processes found."
 fi
 
+echo "Cleaning up zombie processes (xray, chrome)..."
+pkill -9 -f xray
+pkill -9 -f chrome
+pkill -9 -f chromium
+
 echo "Building $BINARY_NAME..."
 # Build the Go application
 go build -o $BINARY_NAME ./cmd/crawler
