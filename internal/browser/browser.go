@@ -94,7 +94,7 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 
 	cfg := config.GetConfig()
 
-	// 1. Check IP (Optional, but good for verification)
+	// 1. Check IP (Strict)
 	currentIP := "Unknown"
 	if p != nil {
 		proxyURL, err := url.Parse(p.ToURL())
@@ -105,15 +105,24 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				},
 				Timeout: 10 * time.Second,
 			}
-			resp, err := client.Get("https://api.ipify.org")
-			if err == nil {
-				defer resp.Body.Close()
-				body, _ := io.ReadAll(resp.Body)
-				currentIP = string(body)
-				log.Printf("🔌 Connected via Proxy IP: %s", currentIP)
-			} else {
-				log.Printf("⚠️ Failed to check IP via proxy: %v", err)
+			// Retry once
+			for i := 0; i < 2; i++ {
+				resp, err := client.Get("https://api.ipify.org")
+				if err == nil {
+					defer resp.Body.Close()
+					body, _ := io.ReadAll(resp.Body)
+					currentIP = string(body)
+					log.Printf("🔌 Connected via Proxy IP: %s", currentIP)
+					break
+				} else {
+					log.Printf("⚠️ Failed to check IP via proxy (Attempt %d/2): %v", i+1, err)
+					time.Sleep(1 * time.Second)
+				}
 			}
+		}
+		
+		if currentIP == "Unknown" {
+			return fmt.Errorf("strict proxy validation failed: could not fetch IP")
 		}
 	}
 

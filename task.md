@@ -6,6 +6,8 @@
 - [x] Implement `RemoveProxy` and update `UpdateProxiesFromIPs` <!-- id: 5 -->
 - [x] Deploy changes to remote server <!-- id: 6 -->
 - [x] Verify the fix on remote server <!-- id: 4 -->
-- [ ] Implement SNI preservation in `UpdateProxiesFromIPs` <!-- id: 7 -->
-- [ ] Verify SNI fix with unit tests <!-- id: 8 -->
-- [ ] Deploy and verify on remote server <!-- id: 9 -->
+- [x] Implement SNI preservation in `UpdateProxiesFromIPs` <!-- id: 7 -->
+- [x] Verify SNI fix with unit tests <!-- id: 8 -->
+- [x] Deploy and verify on remote server <!-- id: 9 -->
+- [ ] Implement strict proxy validation in `RunBatch` <!-- id: 10 -->
+- [ ] Deploy and verify strict validation <!-- id: 11 -->
