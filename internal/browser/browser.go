@@ -1,12 +1,18 @@
 package browser
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
+	"github.com/Davis1233798/crawler-go/internal/config"
 	"github.com/Davis1233798/crawler-go/internal/proxy"
 	"github.com/Davis1233798/crawler-go/pkg/fingerprint"
 	"github.com/playwright-community/playwright-go"
@@ -99,7 +105,9 @@ func (bp *BrowserPool) Shutdown() {
 }
 
 type BrowserBot struct {
-	pool *BrowserPool
+	pool       *BrowserPool
+	clickCount int
+	mu         sync.Mutex
 }
 
 func NewBrowserBot(pool *BrowserPool) *BrowserBot {
@@ -138,6 +146,30 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 		return nil
 	}
 
+	// 1. Check IP
+	currentIP := "Unknown"
+	if p != nil {
+		// Create a custom HTTP client with the proxy to check IP
+		proxyURL, err := url.Parse(p.ToURL())
+		if err == nil {
+			client := &http.Client{
+				Transport: &http.Transport{
+					Proxy: http.ProxyURL(proxyURL),
+				},
+				Timeout: 10 * time.Second,
+			}
+			resp, err := client.Get("https://api.ipify.org")
+			if err == nil {
+				defer resp.Body.Close()
+				body, _ := io.ReadAll(resp.Body)
+				currentIP = string(body)
+				log.Printf("🔌 Connected via Proxy IP: %s", currentIP)
+			} else {
+				log.Printf("⚠️ Failed to check IP via proxy: %v", err)
+			}
+		}
+	}
+
 	context, err := bot.pool.CreateContext(p)
 	if err != nil {
 		return err
@@ -148,6 +180,11 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 	errChan := make(chan error, len(urls))
 
 	log.Printf("Opening %d tabs in parallel...", len(urls))
+
+	// Reset click count
+	bot.mu.Lock()
+	bot.clickCount = 0
+	bot.mu.Unlock()
 
 	for _, u := range urls {
 		wg.Add(1)
@@ -180,8 +217,9 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 	wg.Wait()
 	close(errChan)
 
-	// Collect errors if needed, but for now we just log them in the loop
-	// If all failed, we might want to return an error, but partial success is okay.
+	// Send Discord Notification
+	bot.sendDiscordNotification(currentIP)
+
 	return nil
 }
 
@@ -234,9 +272,37 @@ func (bot *BrowserBot) clickRandomElement(page playwright.Page) {
 				Steps: playwright.Int(10),
 			})
 			// Click
-			handle.Click(playwright.ElementHandleClickOptions{
+			if err := handle.Click(playwright.ElementHandleClickOptions{
 				Delay: playwright.Float(float64(rand.Intn(100) + 50)),
-			})
+			}); err == nil {
+				bot.mu.Lock()
+				bot.clickCount++
+				bot.mu.Unlock()
+			}
 		}
 	}
+}
+
+func (bot *BrowserBot) sendDiscordNotification(ip string) {
+	cfg := config.GetConfig()
+	if cfg.DiscordWebhookURL == "" {
+		return
+	}
+
+	bot.mu.Lock()
+	count := bot.clickCount
+	bot.mu.Unlock()
+
+	message := map[string]interface{}{
+		"content": fmt.Sprintf("🤖 **Crawler Report**\n🌐 IP: `%s`\n👆 Total Clicks: `%d`", ip, count),
+	}
+
+	jsonData, _ := json.Marshal(message)
+	resp, err := http.Post(cfg.DiscordWebhookURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("Failed to send Discord notification: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	log.Println("✅ Discord notification sent.")
 }

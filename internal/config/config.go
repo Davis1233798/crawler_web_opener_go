@@ -18,8 +18,9 @@ type Config struct {
 	Duration        int
 	Headless        bool
 	BrowserPoolSize int
-	MetricsPort     int
-	Targets         []string
+	MetricsPort       int
+	DiscordWebhookURL string
+	Targets           []string
 }
 
 var (
@@ -47,6 +48,7 @@ func (c *Config) load() {
 	c.Headless = getEnvAsBool("HEADLESS", false)
 	c.BrowserPoolSize = getEnvAsInt("BROWSER_POOL_SIZE", 5)
 	c.MetricsPort = getEnvAsInt("METRICS_PORT", 8000)
+	c.DiscordWebhookURL = getEnv("DISCORD_WEBHOOK_URL", "")
 
 	c.loadTargets()
 }
