@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -501,6 +502,17 @@ func (p *MemoryProxyPool) UpdateProxiesFromIPs(baseLink string, ips []string) {
 	if err != nil {
 		log.Printf("Invalid base VLESS link: %v", err)
 		return
+	}
+
+	// Shuffle IPs to get random selection
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(ips), func(i, j int) { ips[i], ips[j] = ips[j], ips[i] })
+
+	// Limit to max 50 IPs to prevent starting too many Xray instances
+	maxIPs := 50
+	if len(ips) > maxIPs {
+		log.Printf("Limiting fetched IPs from %d to %d", len(ips), maxIPs)
+		ips = ips[:maxIPs]
 	}
 
 	var newLinks []string

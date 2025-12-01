@@ -1,38 +1,36 @@
-# Implementation Plan - Fix IP Validation & Address Xray Warning
+# Implementation Plan - Optimize Proxy Management
 
-The goal is to resolve two issues identified in the logs:
-1.  `failed to dial to Last:443`: Caused by parsing invalid text ("Last") as an IP.
-2.  `WebSocket transport ... is deprecated`: Xray warning about WS transport.
+The goal is to prevent "excessive requests" and "mass IP failures" by limiting the number of IPs we process and verifying them in the background before use.
 
 ## User Review Required
 > [!IMPORTANT]
-> I will add strict IP validation to ignore non-IP strings. I will also attempt to update the Xray config to silence or resolve the deprecation warning, though this depends on the server's supported protocols.
+> I will limit the number of fetched IPs to 50 per cycle to prevent rate limiting. I will also implement a background verification process so the crawler only picks up pre-verified proxies.
 
 ## Proposed Changes
 
 ### Proxy Package
 #### [MODIFY] [ip_fetcher.go](file:///c:/Users/solidityDeveloper/go_projects/crawler_web_opener_go/internal/proxy/ip_fetcher.go)
-- Import `net`.
-- Add `isValidIP(ip string) bool` helper.
-- In `FetchPreferredIPs`, validate each extracted string. Discard if not a valid IP.
+- Update `FetchPreferredIPs` to accept a `limit` argument (e.g., 50).
+- Randomly select `limit` IPs from the fetched list if it exceeds the limit.
 
-### VLESS Package
-#### [MODIFY] [vless.go](file:///c:/Users/solidityDeveloper/go_projects/crawler_web_opener_go/internal/proxy/vless.go)
-- Investigate Xray config generation.
-- The warning suggests migrating to `http` transport (XHTTP).
-- However, since we don't control the server, we might be stuck with `ws`.
-- I will check if we can explicitly set `path` or `headers` to satisfy Xray, or if we should just acknowledge it.
-- **Action**: I will try to clean up the `wsSettings` to ensure it's compliant with recent Xray versions (e.g., ensure `Host` header is set correctly in `headers` if needed, though `host` field is preferred now).
-- Actually, the warning says "migrated to XHTTP H2 & H3". This implies `ws` type itself is being deprecated in favor of `http` with `upgrade`.
-- Since we can't change the server, we might just have to live with the warning, OR we can try to use `http` transport with `Upgrade: websocket` if Xray supports that mapping.
-- **Decision**: For now, I will focus on the IP fix. I will make a minor adjustment to `vless.go` to ensure `host` is set correctly, but I might not be able to remove the warning if the server requires `ws`.
+#### [MODIFY] [proxy.go](file:///c:/Users/solidityDeveloper/go_projects/crawler_web_opener_go/internal/proxy/proxy.go)
+- Add `unverifiedProxies` channel or list to `MemoryProxyPool`.
+- Update `AddProxies` to add to `unverifiedProxies` instead of `workingProxies`.
+- Implement `startBackgroundVerifier` in `Initialize`:
+    - continuously pulls from `unverifiedProxies`.
+    - checks IP (using `checkProxy`).
+    - if good, adds to `workingProxies`.
+    - if bad, discards.
+    - respects a concurrency limit (e.g., 5 workers).
 
 ## Verification Plan
 
 ### Automated Tests
-- `TestFetchPreferredIPs_Validation`: Verify "Last" is ignored.
+- `TestFetchPreferredIPs_Limit`: Verify it returns max N IPs.
+- `TestBackgroundVerifier`: Verify that added proxies eventually appear in `workingProxies` if valid.
 
 ### Manual Verification
-- Deploy and run.
-- Confirm "Last:443" error is gone.
-- Check if EOFs persist (which would indicate the Xray warning/protocol is indeed the issue).
+- Deploy to remote server.
+- Monitor logs.
+- Expect to see "Background verifier: Verified X proxies" logs.
+- Expect `RunBatch` to proceed smoothly with valid proxies.

@@ -6,6 +6,8 @@ I have implemented fixes to resolve VLESS connection issues and ensure proxy rel
 1. **Remove Base Link**: The domain-based VLESS link is removed from the pool after fetching IPs to prevent `connection reset` errors.
 2. **SNI Preservation**: `UpdateProxiesFromIPs` now preserves the original domain as `sni` and `host` when using fetched IPs.
 3. **Strict Validation**: `RunBatch` now enforces a mandatory IP check. If the proxy cannot reach `api.ipify.org`, the batch aborts immediately.
+4. **IP Validation**: `FetchPreferredIPs` now strictly validates that fetched strings are valid IPs, preventing errors like `failed to dial to Last:443`.
+5. **Xray Config**: Cleaned up `wsSettings` to ensure compliance with Xray requirements (explicit path).
 
 ## Verification Results
 
@@ -16,10 +18,11 @@ I have implemented fixes to resolve VLESS connection issues and ensure proxy rel
 PASS
 ```
 
-### Strict Validation
-The crawler will now log:
-- `🔌 Connected via Proxy IP: X.X.X.X` if successful.
-- `⚠️ Failed to check IP via proxy...` followed by `strict proxy validation failed` if the proxy is broken.
+### Strict Validation & IP Check
+The crawler will now:
+- Ignore invalid lines (like "Last Modified") from IP lists.
+- Abort batches if the proxy is dead.
+- Log `🔌 Connected via Proxy IP: X.X.X.X` on success.
 
 ## Next Steps
 1. **Deploy & Run**: The changes are pushed to `feature/vless`.
