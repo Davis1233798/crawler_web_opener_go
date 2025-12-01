@@ -13,6 +13,7 @@ import (
 	"github.com/Davis1233798/crawler-go/internal/browser"
 	"github.com/Davis1233798/crawler-go/internal/config"
 	"github.com/Davis1233798/crawler-go/internal/metrics"
+	"github.com/Davis1233798/crawler-go/internal/notify"
 	"github.com/Davis1233798/crawler-go/internal/proxy"
 )
 
@@ -21,6 +22,10 @@ func main() {
 
 	log.Println("Starting Crawler (Go Version)")
 	log.Printf("Threads: %d, Duration: %ds, Headless: %v", cfg.Threads, cfg.Duration, cfg.Headless)
+
+	// Init Notify
+	notify.Init(cfg.DiscordWebhookURL)
+	notify.Send("🚀 Crawler Started")
 
 	// Start Metrics
 	metrics.StartMetricsServer(cfg.MetricsPort)

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Davis1233798/crawler-go/internal/notify"
 )
 
 type Proxy struct {
@@ -355,11 +357,13 @@ func (p *MemoryProxyPool) replenish() {
 		// StartVLESSAdapter is slow.
 		// Let's unlock, start, lock.
 		p.lock.Unlock()
+		notify.Send(fmt.Sprintf("🔄 Replenishing: Starting VLESS adapter for %s...", newProxy.Server[:30]))
 		adapter, err := StartVLESSAdapter(newProxy.Server)
 		p.lock.Lock()
 		
 		if err != nil {
 			log.Printf("Failed to start adapter for reserve proxy: %v", err)
+			notify.Send(fmt.Sprintf("❌ Replenish Failed: %v", err))
 			// Try next one recursively (but we need to be careful about lock)
 			// Since we are locked now, we can call replenish (which locks again? No, it's not recursive if we use a helper or just loop)
 			// Recursive call to replenish will deadlock if we hold lock.
@@ -371,6 +375,7 @@ func (p *MemoryProxyPool) replenish() {
 		}
 		p.vlessAdapters[newProxy.Server] = adapter
 		log.Printf("Started VLESS adapter for replenished proxy at %s", adapter.SocksAddr())
+		notify.Send(fmt.Sprintf("✅ Replenished: VLESS adapter started at %s", adapter.SocksAddr()))
 	}
 	
 	p.workingProxies = append(p.workingProxies, newProxy)

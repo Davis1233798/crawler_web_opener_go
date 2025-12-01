@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Davis1233798/crawler-go/internal/config"
+	"github.com/Davis1233798/crawler-go/internal/notify"
 	"github.com/Davis1233798/crawler-go/internal/proxy"
 	"github.com/Davis1233798/crawler-go/pkg/fingerprint"
 	"github.com/playwright-community/playwright-go"
@@ -97,6 +98,7 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 	// 1. Check IP (Strict)
 	currentIP := "Unknown"
 	if p != nil {
+		notify.Send(fmt.Sprintf("🔍 Checking Proxy IP: %s", p.Server[:30]))
 		proxyURL, err := url.Parse(p.ToURL())
 		if err == nil {
 			client := &http.Client{
