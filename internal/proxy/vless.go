@@ -196,7 +196,11 @@ func buildXrayConfig(localPort int, vless *VLESSConfig) (*core.Config, error) {
 			wsSettings["path"] = vless.Path
 		}
 		if vless.Host != "" {
-			wsSettings["headers"] = map[string]string{"Host": vless.Host}
+			// Fix: Use independent "host" field as per Xray warning
+			wsSettings["host"] = vless.Host
+			// Keep headers for backward compatibility if needed, but Xray warns about it.
+			// Let's remove it to be clean, or set it if host is empty?
+			// The warning says "migrated to independent 'host'".
 		}
 		streamSettings["wsSettings"] = wsSettings
 	} else if vless.Type == "grpc" {
