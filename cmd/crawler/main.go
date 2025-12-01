@@ -57,6 +57,38 @@ func main() {
 		close(stopChan)
 	}()
 
+	// Periodic IP Fetcher
+	if cfg.BaseVLESSLink != "" && len(cfg.PreferredIPAPIs) > 0 {
+		go func() {
+			ticker := time.NewTicker(6 * time.Hour)
+			defer ticker.Stop()
+
+			updateIPs := func() {
+				log.Println("🔄 Fetching preferred IPs...")
+				ips, err := proxy.FetchPreferredIPs(cfg.PreferredIPAPIs)
+				if err != nil {
+					log.Printf("❌ Failed to fetch IPs: %v", err)
+					return
+				}
+				if len(ips) > 0 {
+					proxyPool.UpdateProxiesFromIPs(cfg.BaseVLESSLink, ips)
+				}
+			}
+
+			// Run immediately
+			updateIPs()
+
+			for {
+				select {
+				case <-ticker.C:
+					updateIPs()
+				case <-stopChan:
+					return
+				}
+			}
+		}()
+	}
+
 	log.Println("Workers started...")
 
 	// Main loop

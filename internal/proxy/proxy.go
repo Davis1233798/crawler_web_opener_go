@@ -491,3 +491,43 @@ func (p *MemoryProxyPool) Size() int {
 	defer p.lock.RUnlock()
 	return len(p.workingProxies)
 }
+
+func (p *MemoryProxyPool) UpdateProxiesFromIPs(baseLink string, ips []string) {
+	if baseLink == "" || len(ips) == 0 {
+		return
+	}
+
+	u, err := url.Parse(baseLink)
+	if err != nil {
+		log.Printf("Invalid base VLESS link: %v", err)
+		return
+	}
+
+	var newLinks []string
+	for _, ip := range ips {
+		// ip is "IP:Port"
+		// We need to replace the host in the URL
+		// u.Host contains "host:port" or just "host"
+		// We replace it with the new ip:port
+		
+		// Clone the url (by value copy of struct, but url.URL has pointers? No, User is pointer)
+		// Better to just modify a copy if possible, or reconstruct string.
+		// url.URL struct fields are public.
+		
+		newU := *u // Shallow copy
+		if u.User != nil {
+			user := *u.User // Copy User info
+			newU.User = &user
+		}
+		
+		newU.Host = ip // Set new host:port
+		
+		// Update fragment (remark) to indicate it's an auto-fetched IP
+		newU.Fragment = fmt.Sprintf("%s-auto", ip)
+		
+		newLinks = append(newLinks, newU.String())
+	}
+
+	log.Printf("Generated %d VLESS links from fetched IPs.", len(newLinks))
+	p.AddProxies(newLinks)
+}

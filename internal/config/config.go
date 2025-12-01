@@ -22,6 +22,8 @@ type Config struct {
 	DiscordWebhookURL string
 	Targets           []string
 	NavigationTimeout int
+	PreferredIPAPIs   []string
+	BaseVLESSLink     string
 }
 
 var (
@@ -51,6 +53,12 @@ func (c *Config) load() {
 	c.MetricsPort = getEnvAsInt("METRICS_PORT", 8080)
 	c.DiscordWebhookURL = getEnv("DISCORD_WEBHOOK_URL", "")
 	c.NavigationTimeout = getEnvAsInt("NAVIGATION_TIMEOUT", 30)
+	c.BaseVLESSLink = getEnv("BASE_VLESS_LINK", "")
+
+	apis := getEnv("PREFERRED_IP_APIS", "")
+	if apis != "" {
+		c.PreferredIPAPIs = strings.Split(apis, ",")
+	}
 
 	c.loadTargets()
 }
