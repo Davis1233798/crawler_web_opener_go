@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -130,10 +131,17 @@ loop:
 					if err != nil {
 						log.Printf("Batch finished with error: %v", err)
 						proxyPool.MarkFailed(*p)
-						// Penalty delay on failure to prevent storm
-						delay := time.Duration(rand.Intn(10000)+10000) * time.Millisecond
-						log.Printf("⚠️ Thread sleeping for %v after failure...", delay)
-						time.Sleep(delay)
+						
+						// If timeout, we ran for full duration, so restart immediately (no penalty)
+						if strings.Contains(err.Error(), "timed out") {
+							log.Println("🔄 Timeout detected, restarting immediately...")
+							time.Sleep(100 * time.Millisecond)
+						} else {
+							// Penalty delay on fast failure to prevent storm
+							delay := time.Duration(rand.Intn(10000)+10000) * time.Millisecond
+							log.Printf("⚠️ Thread sleeping for %v after failure...", delay)
+							time.Sleep(delay)
+						}
 					} else {
 						log.Println("Batch completed successfully")
 						metrics.TasksCompleted.Inc()
