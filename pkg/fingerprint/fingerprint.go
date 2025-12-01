@@ -51,12 +51,39 @@ type ExtraConfig struct {
 
 var (
 	UserAgents = []string{
+		// Windows Chrome
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+		"Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+		
+		// macOS Chrome
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Arm Mac OS X 14_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		
+		// Linux Chrome
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+
+		// Windows Firefox
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+		"Mozilla/5.0 (Windows NT 11.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+
+		// macOS Firefox
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:122.0) Gecko/20100101 Firefox/122.0",
+
+		// macOS Safari
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
+
+		// Windows Edge
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
+		"Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
 	}
 
 	FingerprintTemplates = []struct {
@@ -66,34 +93,50 @@ var (
 		ColorScheme string
 	}{
 		{Viewport{1920, 1080}, "en-US", "America/New_York", "dark"},
-		{Viewport{1366, 768}, "en-US", "America/Los_Angeles", "light"},
+		{Viewport{1920, 1080}, "en-US", "America/Los_Angeles", "light"},
+		{Viewport{1366, 768}, "en-US", "America/Chicago", "light"},
 		{Viewport{1536, 864}, "en-GB", "Europe/London", "dark"},
 		{Viewport{1440, 900}, "zh-TW", "Asia/Taipei", "light"},
 		{Viewport{1280, 720}, "zh-CN", "Asia/Shanghai", "dark"},
-		{Viewport{2560, 1440}, "en-US", "America/Chicago", "light"},
+		{Viewport{2560, 1440}, "en-US", "America/Denver", "dark"},
 		{Viewport{1680, 1050}, "ja-JP", "Asia/Tokyo", "dark"},
 		{Viewport{1600, 900}, "ko-KR", "Asia/Seoul", "light"},
+		{Viewport{1920, 1200}, "de-DE", "Europe/Berlin", "dark"},
+		{Viewport{3840, 2160}, "en-US", "America/New_York", "dark"}, // 4K
+		{Viewport{2560, 1600}, "fr-FR", "Europe/Paris", "light"},
+		{Viewport{1366, 768}, "es-ES", "Europe/Madrid", "light"},
+		{Viewport{1280, 800}, "ru-RU", "Europe/Moscow", "dark"},
 	}
 
 	WebGLConfigs = []WebGLConfig{
 		{"Google Inc. (NVIDIA)", "ANGLE (NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)"},
-		{"Google Inc. (Intel)", "ANGLE (Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)"},
-		{"Google Inc. (AMD)", "ANGLE (AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0)"},
-		{"Google Inc. (NVIDIA)", "ANGLE (NVIDIA GeForce GTX 1660 Ti Direct3D11 vs_5_0 ps_5_0)"},
 		{"Google Inc. (NVIDIA)", "ANGLE (NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0)"},
+		{"Google Inc. (NVIDIA)", "ANGLE (NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0)"},
+		{"Google Inc. (NVIDIA)", "ANGLE (NVIDIA GeForce GTX 1660 Ti Direct3D11 vs_5_0 ps_5_0)"},
+		{"Google Inc. (NVIDIA)", "ANGLE (NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0)"},
+		{"Google Inc. (Intel)", "ANGLE (Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)"},
+		{"Google Inc. (Intel)", "ANGLE (Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0)"},
+		{"Google Inc. (AMD)", "ANGLE (AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0)"},
 		{"Google Inc. (AMD)", "ANGLE (AMD Radeon RX 7800 XT Direct3D11 vs_5_0 ps_5_0)"},
+		{"Google Inc. (AMD)", "ANGLE (AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)"},
+		{"Apple", "Apple M1"},
+		{"Apple", "Apple M2"},
+		{"Apple", "Apple M3 Pro"},
 	}
 
 	FontSets = [][]string{
 		{"Arial", "Calibri", "Cambria", "Consolas", "Times New Roman", "Segoe UI", "Verdana"},
 		{"Arial", "Helvetica", "San Francisco", "Monaco", "Courier New", "Times", "Verdana"},
 		{"DejaVu Sans", "Liberation Sans", "Ubuntu", "Noto Sans", "Arial", "FreeSans"},
+		{"Roboto", "Open Sans", "Lato", "Montserrat", "Arial", "Helvetica"},
+		{"Segoe UI", "Tahoma", "Geneva", "Verdana", "sans-serif"},
 	}
 
 	AudioConfigs = []AudioConfig{
 		{44100, 2, 4096},
 		{48000, 2, 8192},
 		{44100, 1, 2048},
+		{96000, 2, 8192},
 	}
 )
 

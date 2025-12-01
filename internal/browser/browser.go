@@ -18,45 +18,121 @@ import (
 	"github.com/playwright-community/playwright-go"
 )
 
-type BrowserPool struct {
+// BrowserManager handles the Playwright driver
+type BrowserManager struct {
 	pw       *playwright.Playwright
-	browser  playwright.Browser
 	headless bool
+	mu       sync.Mutex
 }
 
-func NewBrowserPool(headless bool) *BrowserPool {
-	return &BrowserPool{
+func NewBrowserManager(headless bool) *BrowserManager {
+	return &BrowserManager{
 		headless: headless,
 	}
 }
 
-func (bp *BrowserPool) Initialize() error {
+func (bm *BrowserManager) Initialize() error {
 	var err error
-	bp.pw, err = playwright.Run()
+	bm.pw, err = playwright.Run()
 	if err != nil {
 		return fmt.Errorf("could not start playwright: %v", err)
 	}
+	log.Printf("Playwright driver started (Headless config: %v)", bm.headless)
+	return nil
+}
 
-	log.Printf("Initializing Browser Pool (Headless: %v)", bp.headless)
-	bp.browser, err = bp.pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(bp.headless),
-		Proxy: &playwright.Proxy{
-			Server: "http://per-context",
-		},
+func (bm *BrowserManager) Shutdown() {
+	if bm.pw != nil {
+		bm.pw.Stop()
+	}
+}
+
+func (bm *BrowserManager) LaunchBrowser(p *proxy.Proxy) (playwright.Browser, error) {
+	// Launch a new browser instance
+	// We configure proxy here if it's a global proxy, but we use per-context proxy usually.
+	// However, to ensure "complete process closure", we launch a browser.
+	
+	opts := playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(bm.headless),
 		Args: []string{
 			"--disable-blink-features=AutomationControlled",
 			"--no-sandbox",
 			"--disable-setuid-sandbox",
+			"--disable-infobars",
 		},
-	})
-	if err != nil {
-		return fmt.Errorf("could not launch browser: %v", err)
 	}
-	return nil
+
+	// If we wanted to use proxy at browser level:
+	// opts.Proxy = ...
+	// But we stick to context-level proxy for flexibility, or we can do it here.
+	// Since we launch ONE browser for ONE proxy session (as per new requirement), 
+	// we CAN set it here, but context level is safer for auth.
+	// Let's stick to context level, but launch the browser.
+
+	browser, err := bm.pw.Chromium.Launch(opts)
+	if err != nil {
+		return nil, fmt.Errorf("could not launch browser: %v", err)
+	}
+	return browser, nil
 }
 
-func (bp *BrowserPool) CreateContext(p *proxy.Proxy) (playwright.BrowserContext, error) {
+type BrowserBot struct {
+	manager    *BrowserManager
+	clickCount int
+	mu         sync.Mutex
+}
+
+func NewBrowserBot(manager *BrowserManager) *BrowserBot {
+	return &BrowserBot{manager: manager}
+}
+
+// RunBatch launches a FRESH browser, runs the batch, and closes it.
+func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	// 1. Check IP (Optional, but good for verification)
+	currentIP := "Unknown"
+	if p != nil {
+		proxyURL, err := url.Parse(p.ToURL())
+		if err == nil {
+			client := &http.Client{
+				Transport: &http.Transport{
+					Proxy: http.ProxyURL(proxyURL),
+				},
+				Timeout: 10 * time.Second,
+			}
+			resp, err := client.Get("https://api.ipify.org")
+			if err == nil {
+				defer resp.Body.Close()
+				body, _ := io.ReadAll(resp.Body)
+				currentIP = string(body)
+				log.Printf("🔌 Connected via Proxy IP: %s", currentIP)
+			} else {
+				log.Printf("⚠️ Failed to check IP via proxy: %v", err)
+			}
+		}
+	}
+
+	// Send Discord Notification
+	bot.sendDiscordNotification(currentIP)
+	defer bot.sendDiscordNotification(currentIP) // Final report
+
+	// 2. Launch Fresh Browser
+	browserInstance, err := bot.manager.LaunchBrowser(p)
+	if err != nil {
+		return err
+	}
+	// Ensure browser is closed at the end of this batch
+	defer func() {
+		log.Println("🛑 Closing browser process...")
+		browserInstance.Close()
+	}()
+
+	// 3. Create Context with Fingerprint
 	fp := fingerprint.GetRandomFingerprint()
+	log.Printf("🕵️ Fingerprint: %s | Res: %dx%d | OS: %s", fp.UserAgent[:30]+"...", fp.Screen.Width, fp.Screen.Height, fp.Extra.WebGL.Vendor)
 
 	cs := playwright.ColorScheme(fp.ColorScheme)
 	opts := playwright.BrowserNewContextOptions{
@@ -81,106 +157,17 @@ func (bp *BrowserPool) CreateContext(p *proxy.Proxy) (playwright.BrowserContext,
 		}
 	}
 
-	context, err := bp.browser.NewContext(opts)
+	context, err := browserInstance.NewContext(opts)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	defer context.Close()
 
 	// Inject stealth script
 	script := fingerprint.GetStealthScript(fp)
 	if err := context.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
-		context.Close()
-		return nil, err
-	}
-
-	return context, nil
-}
-
-func (bp *BrowserPool) Shutdown() {
-	if bp.browser != nil {
-		bp.browser.Close()
-	}
-	if bp.pw != nil {
-		bp.pw.Stop()
-	}
-}
-
-type BrowserBot struct {
-	pool       *BrowserPool
-	clickCount int
-	mu         sync.Mutex
-}
-
-func NewBrowserBot(pool *BrowserPool) *BrowserBot {
-	return &BrowserBot{pool: pool}
-}
-
-func (bot *BrowserBot) Run(url string, p *proxy.Proxy, minDuration int) error {
-	context, err := bot.pool.CreateContext(p)
-	if err != nil {
 		return err
 	}
-	defer context.Close()
-
-	page, err := context.NewPage()
-	if err != nil {
-		return err
-	}
-
-	// Navigation
-	log.Printf("Navigating to %s", url)
-	if _, err := page.Goto(url, playwright.PageGotoOptions{
-		Timeout:   playwright.Float(30000),
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
-	}); err != nil {
-		return fmt.Errorf("navigation failed: %v", err)
-	}
-
-	// Simulate activity
-	bot.simulateActivity(page, minDuration)
-
-	return nil
-}
-
-func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) error {
-	if len(urls) == 0 {
-		return nil
-	}
-
-	// 1. Check IP
-	currentIP := "Unknown"
-	if p != nil {
-		// Create a custom HTTP client with the proxy to check IP
-		proxyURL, err := url.Parse(p.ToURL())
-		if err == nil {
-			client := &http.Client{
-				Transport: &http.Transport{
-					Proxy: http.ProxyURL(proxyURL),
-				},
-				Timeout: 10 * time.Second,
-			}
-			resp, err := client.Get("https://api.ipify.org")
-			if err == nil {
-				defer resp.Body.Close()
-				body, _ := io.ReadAll(resp.Body)
-				currentIP = string(body)
-				log.Printf("🔌 Connected via Proxy IP: %s", currentIP)
-			} else {
-				log.Printf("⚠️ Failed to check IP via proxy: %v", err)
-			}
-		}
-	}
-
-	// Send Discord Notification immediately after IP check
-	bot.sendDiscordNotification(currentIP)
-	// Also send final report when done
-	defer bot.sendDiscordNotification(currentIP)
-
-	context, err := bot.pool.CreateContext(p)
-	if err != nil {
-		return err
-	}
-	defer context.Close()
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(urls))
@@ -203,10 +190,8 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				errChan <- err
 				return
 			}
-			// We don't defer page.Close() here because context.Close() will handle it,
-			// and we want them open simultaneously.
 			
-			// Handle popups: close them immediately
+			// Handle popups
 			page.On("popup", func(popup playwright.Page) {
 				log.Println("⚠️ Popup detected, closing it.")
 				popup.Close()
@@ -214,8 +199,8 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 
 			log.Printf("Navigating to %s", targetURL)
 			if _, err := page.Goto(targetURL, playwright.PageGotoOptions{
-				Timeout:   playwright.Float(60000),                   // Increased timeout for batch
-				WaitUntil: playwright.WaitUntilStateDomcontentloaded, // Faster than networkidle for batch
+				Timeout:   playwright.Float(60000),
+				WaitUntil: playwright.WaitUntilStateDomcontentloaded,
 			}); err != nil {
 				log.Printf("Navigation failed for %s: %v", targetURL, err)
 				errChan <- err

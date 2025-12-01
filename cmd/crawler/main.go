@@ -30,18 +30,17 @@ func main() {
 	if len(cfg.Targets) > 0 {
 		targetURL = cfg.Targets[0]
 	}
-
 	// Initial load from disk (VLESS only)
 	proxyPool.Initialize(true, targetURL)
 	log.Printf("Available proxies: %d", proxyPool.Size())
 	defer proxyPool.SaveToDisk() // Save cleaned list on exit
 
-	// Init Browser Pool
-	browserPool := browser.NewBrowserPool(cfg.Headless)
-	if err := browserPool.Initialize(); err != nil {
-		log.Fatalf("Failed to initialize browser pool: %v", err)
+	// Init Browser Manager
+	browserManager := browser.NewBrowserManager(cfg.Headless)
+	if err := browserManager.Initialize(); err != nil {
+		log.Fatalf("Failed to initialize browser manager: %v", err)
 	}
-	defer browserPool.Shutdown()
+	defer browserManager.Shutdown()
 
 	// Worker Pool
 	var wg sync.WaitGroup
@@ -77,29 +76,23 @@ loop:
 					defer wg.Done()
 					defer func() { <-tasks }()
 
-					// Each worker gets its own bot instance, which will acquire a browser from the pool
-					bot := browser.NewBrowserBot(browserPool)
-
-					// Acquire a proxy (exclusive lock)
+					// 1. Get Proxy (Exclusive)
 					p := proxyPool.GetProxy()
 					if p == nil {
 						// No free proxies, wait and retry
-						time.Sleep(1 * time.Second)
+						time.Sleep(2 * time.Second)
 						return
 					}
-					defer proxyPool.ReleaseProxy(p)
 
-					log.Printf("Using proxy %s for batch", p.String())
+					// 2. Create Bot with Manager
+					bot := browser.NewBrowserBot(browserManager)
 
-					metrics.ActiveThreads.Inc()
-
-					start := time.Now()
-					// RunBatch opens all targets
+					// 3. Run Batch (Launches fresh browser, runs, closes)
+					log.Printf("Using proxy %s for batch", p.Server)
 					err := bot.RunBatch(cfg.Targets, p, cfg.Duration)
-					duration := time.Since(start).Seconds()
-					metrics.SessionDuration.Observe(duration)
-
-					metrics.ActiveThreads.Dec()
+					
+					// 4. Release Proxy
+					proxyPool.ReleaseProxy(p)
 
 					if err != nil {
 						log.Printf("Batch finished with error: %v", err)
@@ -108,7 +101,14 @@ loop:
 						log.Println("Batch completed successfully")
 						metrics.TasksCompleted.Inc()
 					}
+					
+					// 5. Wait before next iteration (optional)
+					time.Sleep(1 * time.Second)
 				}()
+				
+				// Small delay to stagger starts
+				time.Sleep(500 * time.Millisecond)
+				
 			case <-stopChan:
 				break loop
 			}
