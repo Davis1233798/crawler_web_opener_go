@@ -247,12 +247,14 @@ func (bot *BrowserBot) simulateActivity(page playwright.Page, durationSeconds in
 		case 1: // Mouse Move
 			bot.humanMouseMove(page)
 		case 2: // Pause
-			time.Sleep(time.Duration(rand.Intn(3)+1) * time.Second)
+			// Reduced pause for higher frequency
+			time.Sleep(time.Duration(rand.Intn(1000)+500) * time.Millisecond)
 		case 3: // Click random element (New)
 			bot.clickRandomElement(page)
 		}
 
-		time.Sleep(time.Duration(rand.Intn(2000)+500) * time.Millisecond)
+		// Reduced interval between actions
+		time.Sleep(time.Duration(rand.Intn(500)+200) * time.Millisecond)
 	}
 }
 
@@ -265,7 +267,7 @@ func (bot *BrowserBot) humanMouseMove(page playwright.Page) {
 	x := rand.Intn(size.Width)
 	y := rand.Intn(size.Height)
 	page.Mouse().Move(float64(x), float64(y), playwright.MouseMoveOptions{
-		Steps: playwright.Int(rand.Intn(20) + 10),
+		Steps: playwright.Int(rand.Intn(5) + 5), // Faster movement
 	})
 }
 
