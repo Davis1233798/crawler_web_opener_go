@@ -98,7 +98,11 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 	// 1. Check IP (Strict)
 	currentIP := "Unknown"
 	if p != nil {
-		notify.Send(fmt.Sprintf("🔍 Checking Proxy IP: %s", p.Server[:30]))
+		serverLog := p.Server
+		if len(serverLog) > 30 {
+			serverLog = serverLog[:30] + "..."
+		}
+		notify.Send(fmt.Sprintf("🔍 Checking Proxy IP: %s", serverLog))
 		proxyURL, err := url.Parse(p.ToURL())
 		if err == nil {
 			client := &http.Client{

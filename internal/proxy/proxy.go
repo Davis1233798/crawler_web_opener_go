@@ -348,7 +348,11 @@ func (p *MemoryProxyPool) replenish() {
 	newProxy := p.reserveProxies[0]
 	p.reserveProxies = p.reserveProxies[1:]
 	
-	log.Printf("Replenishing pool with reserve proxy: %s...", newProxy.Server[:30])
+	serverLog := newProxy.Server
+	if len(serverLog) > 30 {
+		serverLog = serverLog[:30] + "..."
+	}
+	log.Printf("Replenishing pool with reserve proxy: %s", serverLog)
 	
 	// Start adapter if VLESS
 	if strings.HasPrefix(newProxy.Server, "vless://") {
@@ -357,7 +361,11 @@ func (p *MemoryProxyPool) replenish() {
 		// StartVLESSAdapter is slow.
 		// Let's unlock, start, lock.
 		p.lock.Unlock()
-		notify.Send(fmt.Sprintf("🔄 Replenishing: Starting VLESS adapter for %s...", newProxy.Server[:30]))
+		serverLog := newProxy.Server
+		if len(serverLog) > 30 {
+			serverLog = serverLog[:30] + "..."
+		}
+		notify.Send(fmt.Sprintf("🔄 Replenishing: Starting VLESS adapter for %s", serverLog))
 		adapter, err := StartVLESSAdapter(newProxy.Server)
 		p.lock.Lock()
 		
