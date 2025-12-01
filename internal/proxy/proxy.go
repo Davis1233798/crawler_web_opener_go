@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -46,6 +45,7 @@ type MemoryProxyPool struct {
 	workingProxies []Proxy
 	failedProxies  map[string]bool
 	vlessAdapters  map[string]*VLESSAdapter
+	busyProxies    map[string]bool
 	lock           sync.RWMutex
 }
 
@@ -55,8 +55,35 @@ func NewMemoryProxyPool(cacheFile string, minPoolSize int) *MemoryProxyPool {
 		minPoolSize:   minPoolSize,
 		failedProxies: make(map[string]bool),
 		vlessAdapters: make(map[string]*VLESSAdapter),
+		busyProxies:   make(map[string]bool),
 	}
 }
+
+// ... (Initialize remains same, skipping for brevity in replacement if possible, but I need to be careful with line numbers)
+// Actually, I can just replace the struct and New function, and then add ReleaseProxy at the end or replace GetProxy.
+
+// Let's replace struct and New first.
+// Wait, I can't easily skip lines in ReplacementContent.
+// I will replace the struct definition and NewMemoryProxyPool.
+
+// Then I will replace GetProxy and add ReleaseProxy.
+
+// Step 1: Replace struct and New
+// Step 2: Replace GetProxy and add ReleaseProxy
+
+// This tool call is for Step 1 & 2 combined if I target the right range.
+// But GetProxy is further down.
+// I'll do it in two chunks? No, replace_file_content is single chunk.
+// I'll use multi_replace_file_content? No, "Do NOT make multiple parallel calls".
+// I'll use replace_file_content for the struct/New, then another for GetProxy.
+
+// Wait, I can use multi_replace_file_content.
+// "Use this tool ONLY when you are making MULTIPLE, NON-CONTIGUOUS edits".
+// Yes.
+
+// Chunk 1: Struct and New
+// Chunk 2: GetProxy and ReleaseProxy (ReleaseProxy is new, so I can append it or replace GetProxy and add it)
+
 
 func (p *MemoryProxyPool) Initialize(strictVerify bool, targetURL string) {
 	log.Println("Initializing Memory Proxy Pool (VLESS Only)...")
@@ -139,34 +166,68 @@ func ParseProxy(proxyStr string) *Proxy {
 }
 
 func (p *MemoryProxyPool) GetProxy() *Proxy {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	if len(p.workingProxies) == 0 {
 		return nil
 	}
-	
-	// Select a random proxy
-	proxy := p.workingProxies[rand.Intn(len(p.workingProxies))]
-	
-	// If it's a VLESS proxy, check/start adapter and return local SOCKS5 address
-	if strings.HasPrefix(proxy.Server, "vless://") {
-		// We need to upgrade the lock to write lock if we need to start an adapter
-		// But we currently hold RLock. This is tricky.
-		// For simplicity, let's assume adapters are started in AddProxies or Initialize.
-		// But wait, AddProxies is where we should start them.
-		
-		if adapter, ok := p.vlessAdapters[proxy.Server]; ok {
-			return &Proxy{Server: "socks5://" + adapter.SocksAddr()}
-		} else {
-			// Adapter not found? This shouldn't happen if logic is correct.
-			// Maybe it failed to start?
-			log.Printf("VLESS adapter not found for %s", proxy.Server)
-			return nil // Or try to start it?
+
+	// Iterate through proxies to find a free one
+	for _, proxy := range p.workingProxies {
+		if !p.busyProxies[proxy.Server] {
+			// Found a free proxy
+			p.busyProxies[proxy.Server] = true
+
+			// If it's a VLESS proxy, check/start adapter and return local SOCKS5 address
+			if strings.HasPrefix(proxy.Server, "vless://") {
+				if adapter, ok := p.vlessAdapters[proxy.Server]; ok {
+					// Return a new Proxy struct with the local SOCKS5 address
+					// We must keep the original Server string as ID for releasing?
+					// No, the caller will pass back the proxy they used.
+					// But if we return "socks5://...", ReleaseProxy needs to map it back.
+					// Let's attach the original VLESS link to the returned proxy struct?
+					// The Proxy struct is simple.
+					// Let's modify ReleaseProxy to handle the mapping back.
+					return &Proxy{Server: "socks5://" + adapter.SocksAddr()}
+				} else {
+					log.Printf("VLESS adapter not found for %s", proxy.Server)
+					// If adapter missing, maybe mark failed? For now just skip.
+					continue
+				}
+			}
+			return &proxy
 		}
 	}
-	
-	return &proxy
+
+	// All proxies are busy
+	return nil
+}
+
+func (p *MemoryProxyPool) ReleaseProxy(proxy *Proxy) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if proxy == nil {
+		return
+	}
+
+	targetStr := proxy.Server
+
+	// Map back if it's a local SOCKS5 address
+	if strings.HasPrefix(targetStr, "socks5://127.0.0.1:") {
+		for vlessLink, adapter := range p.vlessAdapters {
+			if "socks5://"+adapter.SocksAddr() == targetStr {
+				targetStr = vlessLink
+				break
+			}
+		}
+	}
+
+	if p.busyProxies[targetStr] {
+		delete(p.busyProxies, targetStr)
+		// log.Printf("Released proxy: %s", targetStr)
+	}
 }
 
 func (p *MemoryProxyPool) MarkFailed(proxy Proxy) {

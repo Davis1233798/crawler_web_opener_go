@@ -34,7 +34,7 @@ fi
 # Install Playwright dependencies
 echo "Installing Playwright dependencies..."
 go mod download
-go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
+go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps
 
 # Ubuntu 24.04 specific fix
 if [ "$ID" = "ubuntu" ] && [ "$VER" = "24.04" ]; then

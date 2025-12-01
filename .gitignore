@@ -2,7 +2,7 @@
 *.exe
 *.dll
 *.log
-crawler
+/crawler
 vless.txt
 proxies.txt
 target_site.txt

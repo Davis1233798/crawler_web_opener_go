@@ -170,6 +170,9 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 		}
 	}
 
+	// Send Discord Notification immediately after IP check
+	bot.sendDiscordNotification(currentIP)
+
 	context, err := bot.pool.CreateContext(p)
 	if err != nil {
 		return err
@@ -216,9 +219,6 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 
 	wg.Wait()
 	close(errChan)
-
-	// Send Discord Notification
-	bot.sendDiscordNotification(currentIP)
 
 	return nil
 }

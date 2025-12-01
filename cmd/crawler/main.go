@@ -79,13 +79,14 @@ loop:
 					// Each worker gets its own bot instance, which will acquire a browser from the pool
 					bot := browser.NewBrowserBot(browserPool)
 
-					// Acquire a proxy
+					// Acquire a proxy (exclusive lock)
 					p := proxyPool.GetProxy()
 					if p == nil {
-						log.Println("No proxies available, waiting...")
-						time.Sleep(5 * time.Second)
+						// No free proxies, wait and retry
+						time.Sleep(1 * time.Second)
 						return
 					}
+					defer proxyPool.ReleaseProxy(p)
 
 					log.Printf("Using proxy %s for batch", p.String())
 
