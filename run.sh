@@ -31,6 +31,41 @@ echo "Installing Playwright dependencies..."
 if [ "$machine" == "Linux" ]; then
     echo "Running on Linux, attempting to install dependencies (may require sudo)..."
     go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
+    
+    if [ $? -ne 0 ]; then
+        echo "Standard Playwright install failed. It seems you might be on Ubuntu 24.04 or newer."
+        echo "Attempting manual install of updated dependencies (t64 versions)..."
+        
+        # Update package lists
+        sudo apt-get update
+        
+        # Install replacements for Ubuntu 24.04
+        # libasound2 -> libasound2t64
+        # libicu70 -> libicu74
+        # libffi7 -> libffi8
+        # libx264-163 -> libx264-164
+        # And other t64 transitions mentioned in logs
+        sudo apt-get install -y \
+            libasound2t64 \
+            libicu74 \
+            libffi8 \
+            libx264-164 \
+            libatk-bridge2.0-0t64 \
+            libatk1.0-0t64 \
+            libatspi2.0-0t64 \
+            libcups2t64 \
+            libglib2.0-0t64 \
+            libgtk-3-0t64 \
+            libpng16-16t64 \
+            libevent-2.1-7t64 \
+            libnss3 \
+            libnspr4 \
+            libdrm2 \
+            libgbm1
+            
+        echo "Retrying browser installation (without deps)..."
+        go run github.com/playwright-community/playwright-go/cmd/playwright install
+    fi
 else
     echo "Running on $machine, installing dependencies..."
     go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
