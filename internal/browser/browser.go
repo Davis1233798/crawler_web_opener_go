@@ -92,6 +92,8 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 		return nil
 	}
 
+	cfg := config.GetConfig()
+
 	// 1. Check IP (Optional, but good for verification)
 	currentIP := "Unknown"
 	if p != nil {
@@ -197,9 +199,9 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				popup.Close()
 			})
 
-			log.Printf("Navigating to %s", targetURL)
+			log.Printf("Navigating to %s (Timeout: %ds)", targetURL, cfg.NavigationTimeout)
 			if _, err := page.Goto(targetURL, playwright.PageGotoOptions{
-				Timeout:   playwright.Float(30000),                   // Reduced to 30s
+				Timeout:   playwright.Float(float64(cfg.NavigationTimeout * 1000)),
 				WaitUntil: playwright.WaitUntilStateDomcontentloaded,
 			}); err != nil {
 				log.Printf("Navigation failed for %s: %v", targetURL, err)
@@ -207,15 +209,33 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				return
 			}
 
-			log.Printf("⏳ Activity started for %s (%ds)", targetURL, minDuration)
+			log.Printf("⏳ Activity started for %s (%ds) at %s", targetURL, minDuration, time.Now().Format("15:04:05"))
 			bot.simulateActivity(page, minDuration)
-			log.Printf("✅ Activity finished for %s", targetURL)
+			log.Printf("✅ Activity finished for %s at %s", targetURL, time.Now().Format("15:04:05"))
 		}(u)
 	}
 
-	wg.Wait()
+	// Wait with Hard Timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	// Total timeout = Duration + NavigationTimeout + 30s buffer
+	totalTimeout := time.Duration(minDuration+cfg.NavigationTimeout+30) * time.Second
+	log.Printf("Batch started at %s, Hard Timeout: %v", time.Now().Format("15:04:05"), totalTimeout)
+
+	select {
+	case <-done:
+		log.Println("Batch finished normally.")
+	case <-time.After(totalTimeout):
+		log.Printf("⚠️ Batch TIMED OUT at %s! Forcing closure.", time.Now().Format("15:04:05"))
+		return fmt.Errorf("batch timed out after %v", totalTimeout)
+	}
+
 	close(errChan)
-	log.Println("Batch finished, closing browser...")
+	log.Println("Batch cleanup complete.")
 
 	return nil
 }
