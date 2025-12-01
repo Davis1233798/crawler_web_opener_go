@@ -44,6 +44,7 @@ type MemoryProxyPool struct {
 	cacheFile      string
 	minPoolSize    int
 	workingProxies []Proxy
+	reserveProxies []Proxy // Proxies waiting to be used
 	failedProxies  map[string]bool
 	vlessAdapters  map[string]*VLESSAdapter
 	busyProxies    map[string]bool
@@ -319,6 +320,42 @@ func (p *MemoryProxyPool) MarkFailed(proxy Proxy) {
 		adapter.Close()
 		delete(p.vlessAdapters, proxyStr)
 	}
+	
+	// Replenish from reserve if needed
+	p.replenish()
+}
+
+func (p *MemoryProxyPool) replenish() {
+	if len(p.workingProxies) >= p.minPoolSize {
+		return
+	}
+	
+	if len(p.reserveProxies) == 0 {
+		log.Println("⚠️ No reserve proxies available to replenish pool.")
+		return
+	}
+	
+	// Pop from reserve
+	// Use random or first? First is fine since we shuffled on fetch.
+	newProxy := p.reserveProxies[0]
+	p.reserveProxies = p.reserveProxies[1:]
+	
+	log.Printf("Replenishing pool with reserve proxy: %s...", newProxy.Server[:30])
+	
+	// Start adapter if VLESS
+	if strings.HasPrefix(newProxy.Server, "vless://") {
+		adapter, err := StartVLESSAdapter(newProxy.Server)
+		if err != nil {
+			log.Printf("Failed to start adapter for reserve proxy: %v", err)
+			// Try next one recursively
+			p.replenish()
+			return
+		}
+		p.vlessAdapters[newProxy.Server] = adapter
+		log.Printf("Started VLESS adapter for replenished proxy at %s", adapter.SocksAddr())
+	}
+	
+	p.workingProxies = append(p.workingProxies, newProxy)
 }
 
 func (p *MemoryProxyPool) verifyBatch(proxies []Proxy, targetURL string) []Proxy {
@@ -413,7 +450,7 @@ func (p *MemoryProxyPool) AddProxies(proxies []string) {
 
 	addedCount := 0
 	for _, proxyStr := range proxies {
-		// Check if already exists (simple check)
+		// Check if already exists in working or reserve
 		exists := false
 		for _, existing := range p.workingProxies {
 			if existing.String() == proxyStr {
@@ -421,30 +458,43 @@ func (p *MemoryProxyPool) AddProxies(proxies []string) {
 				break
 			}
 		}
+		if !exists {
+			for _, existing := range p.reserveProxies {
+				if existing.String() == proxyStr {
+					exists = true
+					break
+				}
+			}
+		}
 		if exists {
 			continue
 		}
 
 		if proxy := ParseProxy(proxyStr); proxy != nil {
-			// If VLESS, start adapter
-			if strings.HasPrefix(proxy.Server, "vless://") {
-				if _, ok := p.vlessAdapters[proxy.Server]; !ok {
-					adapter, err := StartVLESSAdapter(proxy.Server)
-					if err != nil {
-						log.Printf("Failed to start adapter for %s: %v", proxy.Server, err)
-						continue
+			// Decide where to put it
+			if len(p.workingProxies) < p.minPoolSize {
+				// Add to working and start adapter
+				if strings.HasPrefix(proxy.Server, "vless://") {
+					if _, ok := p.vlessAdapters[proxy.Server]; !ok {
+						adapter, err := StartVLESSAdapter(proxy.Server)
+						if err != nil {
+							log.Printf("Failed to start adapter for %s: %v", proxy.Server, err)
+							continue
+						}
+						p.vlessAdapters[proxy.Server] = adapter
+						log.Printf("Started VLESS adapter at %s", adapter.SocksAddr())
 					}
-					p.vlessAdapters[proxy.Server] = adapter
-					log.Printf("Started VLESS adapter at %s", adapter.SocksAddr())
 				}
+				p.workingProxies = append(p.workingProxies, *proxy)
+			} else {
+				// Add to reserve (do NOT start adapter)
+				p.reserveProxies = append(p.reserveProxies, *proxy)
 			}
-			
-			p.workingProxies = append(p.workingProxies, *proxy)
 			addedCount++
 		}
 	}
 	if addedCount > 0 {
-		log.Printf("Added %d new proxies to pool. Total: %d", addedCount, len(p.workingProxies))
+		log.Printf("Added %d new proxies. Working: %d, Reserve: %d", addedCount, len(p.workingProxies), len(p.reserveProxies))
 	}
 }
 
@@ -508,8 +558,9 @@ func (p *MemoryProxyPool) UpdateProxiesFromIPs(baseLink string, ips []string) {
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(ips), func(i, j int) { ips[i], ips[j] = ips[j], ips[i] })
 
-	// Limit to max 10 IPs to prevent starting too many Xray instances
-	maxIPs := 10
+	// Limit to max 50 IPs to prevent starting too many Xray instances
+	// We now support reserve proxies, so we can fetch more.
+	maxIPs := 50
 	if len(ips) > maxIPs {
 		log.Printf("Limiting fetched IPs from %d to %d", len(ips), maxIPs)
 		ips = ips[:maxIPs]
