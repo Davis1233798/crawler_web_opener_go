@@ -1,44 +1,29 @@
 # VLESS Connection Fix Walkthrough
 
-I have implemented a fix to prevent the crawler from using the blocked domain-based VLESS link and to ensure SNI is preserved when using fetched IPs.
+I have implemented fixes to resolve VLESS connection issues and ensure proxy reliability.
 
 ## Changes
-- Modified `internal/proxy/proxy.go`:
-    - Added `RemoveProxy` method to remove the base link.
-    - Updated `UpdateProxiesFromIPs` to preserve `sni` and `host` parameters from the original link when replacing the address with an IP.
-- Updated `internal/proxy/proxy_test.go`:
-    - Added `TestRemoveProxy` to verify removal logic.
-    - Added `TestUpdateProxiesFromIPs_SNI` to verify SNI preservation.
+1. **Remove Base Link**: The domain-based VLESS link is removed from the pool after fetching IPs to prevent `connection reset` errors.
+2. **SNI Preservation**: `UpdateProxiesFromIPs` now preserves the original domain as `sni` and `host` when using fetched IPs.
+3. **Strict Validation**: `RunBatch` now enforces a mandatory IP check. If the proxy cannot reach `api.ipify.org`, the batch aborts immediately.
 
 ## Verification Results
 
-### Remote Unit Test
-I ran the unit tests on the remote server (`instance1`) to verify the logic works in the target environment.
-
-**Command:**
-```bash
-/usr/local/go/bin/go test -v ./internal/proxy/...
+### Remote Unit Test (SNI)
 ```
-
-**Output:**
-```
-=== RUN   TestRemoveProxy
---- PASS: TestRemoveProxy (0.00s)
 === RUN   TestUpdateProxiesFromIPs_SNI
-2025/12/01 17:57:19 Started VLESS adapter at 127.0.0.1:36441
-2025/12/01 17:57:19 Added 1 new proxies to pool. Total: 1
 --- PASS: TestUpdateProxiesFromIPs_SNI (0.00s)
 PASS
-ok      github.com/Davis1233798/crawler-go/internal/proxy       0.010s
 ```
 
-Both tests passed. This confirms:
-1. The base link is correctly removed.
-2. The new links generated from IPs correctly include `sni` and `host` parameters derived from the original domain.
+### Strict Validation
+The crawler will now log:
+- `🔌 Connected via Proxy IP: X.X.X.X` if successful.
+- `⚠️ Failed to check IP via proxy...` followed by `strict proxy validation failed` if the proxy is broken.
 
 ## Next Steps
-1. **Deploy & Run**: The changes are already pushed to the `feature/vless` branch and pulled to the remote server.
-2. **Monitor**: Run the crawler on the remote server. The `connection reset` errors should be resolved.
+1. **Deploy & Run**: The changes are pushed to `feature/vless`.
+2. **Monitor**: Run the crawler on the remote server.
    ```bash
    cd ~/crawler_web_opener_go
    go build -o crawler cmd/crawler/main.go

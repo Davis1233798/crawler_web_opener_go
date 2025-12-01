@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -71,6 +72,12 @@ func FetchPreferredIPs(apiURLs []string) ([]string, error) {
 			}
 
 			if ipPart == "" {
+				continue
+			}
+			
+			// Validate IP
+			if net.ParseIP(ipPart) == nil {
+				// log.Printf("Skipping invalid IP: %s", ipPart)
 				continue
 			}
 			

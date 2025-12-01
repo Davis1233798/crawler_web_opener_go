@@ -9,5 +9,8 @@
 - [x] Implement SNI preservation in `UpdateProxiesFromIPs` <!-- id: 7 -->
 - [x] Verify SNI fix with unit tests <!-- id: 8 -->
 - [x] Deploy and verify on remote server <!-- id: 9 -->
-- [ ] Implement strict proxy validation in `RunBatch` <!-- id: 10 -->
-- [ ] Deploy and verify strict validation <!-- id: 11 -->
+- [x] Implement strict proxy validation in `RunBatch` <!-- id: 10 -->
+- [x] Deploy and verify strict validation <!-- id: 11 -->
+- [ ] Implement strict IP validation in `ip_fetcher.go` <!-- id: 12 -->
+- [ ] Address Xray WebSocket deprecation warning (if possible) <!-- id: 13 -->
+- [ ] Deploy and verify IP validation and connection stability <!-- id: 14 -->
