@@ -33,6 +33,7 @@ func main() {
 
 	// Initial load from disk (VLESS only)
 	proxyPool.Initialize(true, targetURL)
+	log.Printf("Available proxies: %d", proxyPool.Size())
 	defer proxyPool.SaveToDisk() // Save cleaned list on exit
 
 	// Init Browser Pool

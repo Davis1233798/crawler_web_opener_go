@@ -37,6 +37,7 @@ func (bp *BrowserPool) Initialize() error {
 		return fmt.Errorf("could not start playwright: %v", err)
 	}
 
+	log.Printf("Initializing Browser Pool (Headless: %v)", bp.headless)
 	bp.browser, err = bp.pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(bp.headless),
 		Proxy: &playwright.Proxy{
@@ -172,6 +173,8 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 
 	// Send Discord Notification immediately after IP check
 	bot.sendDiscordNotification(currentIP)
+	// Also send final report when done
+	defer bot.sendDiscordNotification(currentIP)
 
 	context, err := bot.pool.CreateContext(p)
 	if err != nil {
@@ -202,6 +205,12 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 			}
 			// We don't defer page.Close() here because context.Close() will handle it,
 			// and we want them open simultaneously.
+			
+			// Handle popups: close them immediately
+			page.On("popup", func(popup playwright.Page) {
+				log.Println("⚠️ Popup detected, closing it.")
+				popup.Close()
+			})
 
 			log.Printf("Navigating to %s", targetURL)
 			if _, err := page.Goto(targetURL, playwright.PageGotoOptions{
