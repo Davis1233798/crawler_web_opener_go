@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -129,13 +130,16 @@ loop:
 					if err != nil {
 						log.Printf("Batch finished with error: %v", err)
 						proxyPool.MarkFailed(*p)
+						// Penalty delay on failure to prevent storm
+						delay := time.Duration(rand.Intn(10000)+10000) * time.Millisecond
+						log.Printf("⚠️ Thread sleeping for %v after failure...", delay)
+						time.Sleep(delay)
 					} else {
 						log.Println("Batch completed successfully")
 						metrics.TasksCompleted.Inc()
+						// Normal delay
+						time.Sleep(time.Duration(rand.Intn(4000)+1000) * time.Millisecond)
 					}
-					
-					// 5. Wait before next iteration (optional)
-					time.Sleep(1 * time.Second)
 				}()
 				
 				// Small delay to stagger starts
