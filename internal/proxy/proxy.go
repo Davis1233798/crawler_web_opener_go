@@ -59,12 +59,11 @@ func NewMemoryProxyPool(cacheFile string, minPoolSize int) *MemoryProxyPool {
 }
 
 func (p *MemoryProxyPool) Initialize(strictVerify bool, targetURL string) {
-	log.Println("Initializing Memory Proxy Pool...")
-	rawProxies := p.loadFromDisk()
+	log.Println("Initializing Memory Proxy Pool (VLESS Only)...")
 	
-	// Load VLESS proxies
-	vlessProxies := p.loadVLESSFromDisk()
-	for _, vp := range vlessProxies {
+	// Load VLESS proxies only
+	rawProxies := p.loadVLESSFromDisk()
+	for _, vp := range rawProxies {
 		if strings.HasPrefix(vp.Server, "vless://") {
 			if _, ok := p.vlessAdapters[vp.Server]; !ok {
 				adapter, err := StartVLESSAdapter(vp.Server)
@@ -77,7 +76,6 @@ func (p *MemoryProxyPool) Initialize(strictVerify bool, targetURL string) {
 			}
 		}
 	}
-	rawProxies = append(rawProxies, vlessProxies...)
 
 	if len(rawProxies) > 0 && strictVerify {
 		log.Println("Strictly verifying proxies...")
@@ -91,27 +89,6 @@ func (p *MemoryProxyPool) Initialize(strictVerify bool, targetURL string) {
 	if strictVerify {
 		p.SaveToDisk()
 	}
-}
-
-func (p *MemoryProxyPool) loadFromDisk() []Proxy {
-	file, err := os.Open(p.cacheFile)
-	if err != nil {
-		log.Printf("Failed to load cache file: %v", err)
-		return []Proxy{}
-	}
-	defer file.Close()
-
-	var proxies []Proxy
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			if proxy := ParseProxy(line); proxy != nil {
-				proxies = append(proxies, *proxy)
-			}
-		}
-	}
-	return proxies
 }
 
 func (p *MemoryProxyPool) loadVLESSFromDisk() []Proxy {

@@ -31,20 +31,9 @@ func main() {
 		targetURL = cfg.Targets[0]
 	}
 
-	// Fetch proxies if pool is empty or small
-	fetcher := proxy.NewProxyFetcher()
-	// Initial load from disk
+	// Initial load from disk (VLESS only)
 	proxyPool.Initialize(true, targetURL)
 	defer proxyPool.SaveToDisk() // Save cleaned list on exit
-
-	if proxyPool.Size() < cfg.Threads {
-		log.Println("Proxy pool is low, fetching from APIs...")
-		newProxies := fetcher.FetchAll(100)
-		proxyPool.AddProxies(newProxies)
-		// Save to disk after adding
-		proxyPool.SaveToDisk()
-		log.Printf("Proxy pool now has %d proxies", proxyPool.Size())
-	}
 
 	// Init Browser Pool
 	browserPool := browser.NewBrowserPool(cfg.Headless)

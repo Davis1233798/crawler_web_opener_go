@@ -19,7 +19,6 @@ type Config struct {
 	Headless        bool
 	BrowserPoolSize int
 	MetricsPort     int
-	ScrapyType      string
 	Targets         []string
 }
 
@@ -48,7 +47,6 @@ func (c *Config) load() {
 	c.Headless = getEnvAsBool("HEADLESS", false)
 	c.BrowserPoolSize = getEnvAsInt("BROWSER_POOL_SIZE", 5)
 	c.MetricsPort = getEnvAsInt("METRICS_PORT", 8000)
-	c.ScrapyType = getEnv("SCRAPY_TYPE", "ALL")
 
 	c.loadTargets()
 }
