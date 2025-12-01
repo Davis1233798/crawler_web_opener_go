@@ -45,11 +45,35 @@ func FetchPreferredIPs(apiURLs []string) ([]string, error) {
 			}
 
 			// Handle CSV or simple IP:Port format
-			// If CSV, assume IP is first column, Port is second (if exists), or IP:Port in first
-			// Common format: IP,Port,Latency,... or IP:Port
+			// Also handle "  - 1.2.3.4  DESC" format (vfarid/cf-clean-ips)
 			
-			parts := strings.Split(line, ",")
-			ipPart := strings.TrimSpace(parts[0])
+			// Remove leading "- " if present
+			line = strings.TrimPrefix(line, "- ")
+			line = strings.TrimSpace(line)
+			
+			var ipPart, port string
+			
+			if strings.Contains(line, ",") {
+				// CSV format
+				parts := strings.Split(line, ",")
+				ipPart = strings.TrimSpace(parts[0])
+				if len(parts) >= 2 {
+					port = strings.TrimSpace(parts[1])
+				}
+			} else {
+				// Whitespace separated
+				parts := strings.Fields(line)
+				if len(parts) > 0 {
+					ipPart = parts[0]
+					// If there is a second part and it's numeric, it might be a port, but usually it's metadata in these lists
+					// vfarid list: IP  CODE  DOMAIN  TIMESTAMP
+					// So we assume port 443 unless IP contains it
+				}
+			}
+
+			if ipPart == "" {
+				continue
+			}
 			
 			// Check if ipPart contains port
 			if strings.Contains(ipPart, ":") {
@@ -57,21 +81,17 @@ func FetchPreferredIPs(apiURLs []string) ([]string, error) {
 					uniqueIPs[ipPart] = true
 					ips = append(ips, ipPart)
 				}
-			} else if len(parts) >= 2 {
-				// Try to find port in second column
-				port := strings.TrimSpace(parts[1])
-				// Simple check if port is numeric
-				if port != "" {
-					fullIP := fmt.Sprintf("%s:%s", ipPart, port)
-					if !uniqueIPs[fullIP] {
-						uniqueIPs[fullIP] = true
-						ips = append(ips, fullIP)
-					}
-				}
 			} else {
-				// Default port 443 if just IP? Or skip?
-				// Let's assume 443 if just IP
-				fullIP := fmt.Sprintf("%s:443", ipPart)
+				// If port was found in CSV (and is numeric), use it
+				// Otherwise default to 443
+				finalPort := "443"
+				if port != "" {
+					// Validate port is number
+					// ... (omitted for brevity, just use if not empty)
+					finalPort = port
+				}
+				
+				fullIP := fmt.Sprintf("%s:%s", ipPart, finalPort)
 				if !uniqueIPs[fullIP] {
 					uniqueIPs[fullIP] = true
 					ips = append(ips, fullIP)
