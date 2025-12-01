@@ -1,11 +1,8 @@
-# Task List
+# Debugging Remote VLESS Connection
 
-- [x] Explore existing codebase in `crawler-go` <!-- id: 0 -->
-- [x] Create implementation plan <!-- id: 1 -->
-- [x] Add new proxy to `proxies.txt` <!-- id: 6 -->
-- [x] Implement concurrent page opening logic (`RunBatch`) <!-- id: 2 -->
-- [x] Restore worker pool for multiple browsers <!-- id: 7 -->
-- [x] Implement headless/headed mode toggle <!-- id: 3 -->
-- [x] Implement human simulation (clicking) <!-- id: 4 -->
-- [x] Implement auto-removal of failed proxies from disk <!-- id: 8 -->
-- [ ] Verify implementation <!-- id: 5 -->
+- [x] Analyze the error logs and identify the root cause of `connection reset by peer` <!-- id: 0 -->
+- [x] Review `internal/proxy/vless.go` and `internal/proxy/proxy.go` for connection logic <!-- id: 1 -->
+- [x] Propose potential fixes (remove base link) <!-- id: 3 -->
+- [ ] Implement `RemoveProxy` and update `UpdateProxiesFromIPs` <!-- id: 5 -->
+- [ ] Deploy changes to remote server <!-- id: 6 -->
+- [ ] Verify the fix on remote server <!-- id: 4 -->

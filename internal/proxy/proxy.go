@@ -530,4 +530,52 @@ func (p *MemoryProxyPool) UpdateProxiesFromIPs(baseLink string, ips []string) {
 
 	log.Printf("Generated %d VLESS links from fetched IPs.", len(newLinks))
 	p.AddProxies(newLinks)
+	
+	// Remove the base link to prevent using the blocked domain
+	p.RemoveProxy(baseLink)
+}
+
+func (p *MemoryProxyPool) RemoveProxy(proxyStr string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	// Remove from workingProxies
+	for i, px := range p.workingProxies {
+		if px.Server == proxyStr || px.String() == proxyStr {
+			p.workingProxies = append(p.workingProxies[:i], p.workingProxies[i+1:]...)
+			// We continue to remove all instances if duplicates exist? 
+			// Or just break? Let's break for now, assuming unique base link.
+			// Actually, if we multiplexed, we might have multiple.
+			// But Initialize multiplexes by appending duplicates.
+			// So we should probably remove ALL instances of the base link.
+			// To do that safely while iterating, we should filter.
+			break 
+		}
+	}
+	
+	// Better removal for all instances:
+	// Filter in place
+	n := 0
+	for _, px := range p.workingProxies {
+		if px.Server != proxyStr && px.String() != proxyStr {
+			p.workingProxies[n] = px
+			n++
+		}
+	}
+	p.workingProxies = p.workingProxies[:n]
+
+	// If it's a VLESS adapter, close it
+	// Check for exact match or key match
+	// If multiplexed, keys are "vless://...#index"
+	// We need to remove all adapters derived from this base link.
+	
+	for key, adapter := range p.vlessAdapters {
+		// Check if key starts with proxyStr (which is the vless link)
+		// The key format is "vless://...#index"
+		if strings.HasPrefix(key, proxyStr) {
+			adapter.Close()
+			delete(p.vlessAdapters, key)
+			log.Printf("Removed base VLESS adapter: %s", key)
+		}
+	}
 }
