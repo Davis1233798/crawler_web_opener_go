@@ -1,1 +1,0 @@
-vless://cd48251a-775b-48cf-80af-ca31e37d8ecd@purple-unit-9b62.davis1233800.workers.dev:443?security=tls&type=ws&host=purple-unit-9b62.davis1233800.workers.dev&sni=purple-unit-9b62.davis1233800.workers.dev&path=%2F%3Fed%3D2560&encryption=none&allowInsecure=1#edgetunnel

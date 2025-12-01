@@ -1,1 +1,10 @@
 .env
+*.exe
+*.dll
+*.log
+crawler
+vless.txt
+proxies.txt
+target_site.txt
+tmp/
+vendor/
