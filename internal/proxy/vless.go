@@ -225,6 +225,7 @@ func buildXrayConfig(localPort int, vless *VLESSConfig) (*core.Config, error) {
 
 	// Build full config using conf helper
 	pbConfig, err := (&conf.Config{
+		LogConfig: &conf.LogConfig{LogLevel: "error"},
 		InboundConfigs: []conf.InboundDetourConfig{*inbound},
 		OutboundConfigs: []conf.OutboundDetourConfig{*outbound},
 	}).Build()
