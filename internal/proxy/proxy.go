@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Davis1233798/crawler-go/internal/notify"
+
 )
 
 type Proxy struct {
