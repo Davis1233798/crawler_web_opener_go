@@ -127,7 +127,7 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 			}
 		}
 		
-		if currentIP == "Unknown" {
+		if currentIP == "Unknown" || currentIP == "" {
 			return fmt.Errorf("strict proxy validation failed: could not fetch IP")
 		}
 	}
@@ -246,10 +246,19 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 		log.Println("Batch finished normally.")
 	case <-time.After(totalTimeout):
 		log.Printf("⚠️ Batch TIMED OUT at %s! Forcing closure.", time.Now().Format("15:04:05"))
-		return fmt.Errorf("batch timed out after %v", totalTimeout)
+		return fmt.Errorf("BATCH_COMPLETED_TIMEOUT: batch timed out after %v", totalTimeout)
 	}
 
+	// Check for navigation errors
 	close(errChan)
+	var errs []error
+	for err := range errChan {
+		errs = append(errs, err)
+	}
+
+	if len(errs) == len(urls) && len(urls) > 0 {
+		return fmt.Errorf("all navigations failed: %v", errs[0])
+	}
 	log.Println("Batch cleanup complete.")
 
 	return nil

@@ -48,8 +48,10 @@ type MemoryProxyPool struct {
 	workingProxies []Proxy
 	reserveProxies []Proxy // Proxies waiting to be used
 	failedProxies  map[string]bool
-	vlessAdapters  map[string]*VLESSAdapter
 	busyProxies    map[string]bool
+	activeAdapters map[string]*VLESSAdapter // Map socksAddr -> Adapter
+	proxyToVless   map[string]string      // Map socksAddr -> VLESS config string
+	failureCounts  map[string]int
 	lock           sync.RWMutex
 }
 
@@ -58,8 +60,10 @@ func NewMemoryProxyPool(cacheFile string, minPoolSize int) *MemoryProxyPool {
 		cacheFile:     cacheFile,
 		minPoolSize:   minPoolSize,
 		failedProxies: make(map[string]bool),
-		vlessAdapters: make(map[string]*VLESSAdapter),
-		busyProxies:   make(map[string]bool),
+		activeAdapters: make(map[string]*VLESSAdapter),
+		proxyToVless:   make(map[string]string),
+		busyProxies:    make(map[string]bool),
+		failureCounts:  make(map[string]int),
 	}
 }
 
@@ -108,54 +112,17 @@ func (p *MemoryProxyPool) Initialize(strictVerify bool, targetURL string) {
 		}
 	}
 
-	for i, vp := range rawProxies {
+	// We do NOT start adapters here anymore.
+	// We just load the VLESS configs into workingProxies.
+	// GetProxy will start them on demand.
+
+	for _, vp := range rawProxies {
 		if strings.HasPrefix(vp.Server, "vless://") {
-			// We use a unique key for each adapter instance to allow multiple adapters for same VLESS config
-			// Key format: vless://...#index
-			adapterKey := fmt.Sprintf("%s#%d", vp.Server, i)
-			
-			if _, ok := p.vlessAdapters[adapterKey]; !ok {
-				adapter, err := StartVLESSAdapter(vp.Server)
-				if err != nil {
-					log.Printf("Failed to start adapter for %s: %v", vp.Server, err)
-					continue
-				}
-				p.vlessAdapters[adapterKey] = adapter
-				
-				// Add to working proxies with the unique key so GetProxy can find the adapter
-				// We store the adapterKey as the "Server" in workingProxies
-				// GetProxy will need to handle this key.
-				p.workingProxies = append(p.workingProxies, Proxy{Server: adapterKey})
-				
-				log.Printf("Started VLESS adapter %d at %s", i, adapter.SocksAddr())
-			}
+			p.workingProxies = append(p.workingProxies, vp)
 		}
 	}
-
-	// For VLESS, we don't strictly verify against targetURL in the same way because 
-	// we just started them. But if requested, we can.
-	// However, verifyBatch expects Proxy structs. Our workingProxies now contain keys.
-	// We need to adjust verifyBatch or skip it for now to ensure stability first.
-	// Given the user wants concurrency, let's trust the adapters start successfully.
-	// If strictVerify is true, we can check connectivity.
 	
-	if strictVerify {
-		log.Println("Strictly verifying proxies...")
-		// We verify the proxies we just added (which are in p.workingProxies)
-		// But verifyBatch needs to handle the adapterKey.
-		// Let's rely on the fact that GetProxy handles the key and returns a SOCKS5 url.
-		// Wait, verifyBatch calls checkProxy which calls ToURL.
-		// If Server is "vless://...#1", ToURL will be weird.
-		// We need to update GetProxy and other methods to handle the key first.
-		// For now, let's skip strict verification in Initialize to avoid breaking changes in verifyBatch
-		// or update verifyBatch to handle keys.
-		// Actually, let's update GetProxy first, then we can verify.
-		// But I can't update GetProxy in this tool call easily if I don't include it.
-		// I'll skip verification in this block and rely on runtime failure/retry.
-		log.Println("Skipping strict verification during multiplexing initialization.")
-	}
-	
-	// Initial save is not needed for multiplexed proxies as they are generated.
+	log.Printf("Initialized pool with %d VLESS configs (Ephemeral mode)", len(p.workingProxies))
 }
 
 func (p *MemoryProxyPool) loadVLESSFromDisk() []Proxy {
@@ -216,20 +183,28 @@ func (p *MemoryProxyPool) GetProxy() *Proxy {
 	// Iterate through proxies to find a free one
 	for _, proxy := range p.workingProxies {
 		if !p.busyProxies[proxy.Server] {
-			// Found a free proxy
+			// Found a free VLESS config
 			p.busyProxies[proxy.Server] = true
 
-			// If it's a VLESS proxy, check/start adapter and return local SOCKS5 address
-			// The proxy.Server here is the adapterKey (e.g., vless://...#index)
+			// Start Ephemeral Adapter
 			if strings.HasPrefix(proxy.Server, "vless://") {
-				if adapter, ok := p.vlessAdapters[proxy.Server]; ok {
-					// Return a new Proxy struct with the local SOCKS5 address
-					return &Proxy{Server: "socks5://" + adapter.SocksAddr()}
-				} else {
-					log.Printf("VLESS adapter not found for %s", proxy.Server)
+				adapter, err := StartVLESSAdapter(proxy.Server)
+				if err != nil {
+					log.Printf("Failed to start ephemeral adapter for %s: %v", proxy.Server, err)
+					// Mark as failed immediately? Or just skip?
+					// Let's skip and try next
+					delete(p.busyProxies, proxy.Server)
 					continue
 				}
+				
+				socksAddr := "socks5://" + adapter.SocksAddr()
+				p.activeAdapters[socksAddr] = adapter
+				p.proxyToVless[socksAddr] = proxy.Server
+				
+				return &Proxy{Server: socksAddr}
 			}
+			
+			// Normal proxy (not VLESS) - not fully supported in this refactor but keeping logic
 			return &proxy
 		}
 	}
@@ -246,21 +221,24 @@ func (p *MemoryProxyPool) ReleaseProxy(proxy *Proxy) {
 		return
 	}
 
-	targetStr := proxy.Server
-
-	// Map back if it's a local SOCKS5 address
-	if strings.HasPrefix(targetStr, "socks5://127.0.0.1:") {
-		for adapterKey, adapter := range p.vlessAdapters {
-			if "socks5://"+adapter.SocksAddr() == targetStr {
-				targetStr = adapterKey
-				break
-			}
+	socksAddr := proxy.Server
+	
+	// Check if it's an ephemeral adapter
+	if adapter, ok := p.activeAdapters[socksAddr]; ok {
+		// Close the adapter (Recycle)
+		adapter.Close()
+		delete(p.activeAdapters, socksAddr)
+		
+		// Unmark the VLESS config as busy
+		if vlessLink, ok := p.proxyToVless[socksAddr]; ok {
+			delete(p.busyProxies, vlessLink)
+			delete(p.proxyToVless, socksAddr)
 		}
-	}
-
-	if p.busyProxies[targetStr] {
-		delete(p.busyProxies, targetStr)
-		// log.Printf("Released proxy: %s", targetStr)
+	} else {
+		// Normal proxy
+		if p.busyProxies[socksAddr] {
+			delete(p.busyProxies, socksAddr)
+		}
 	}
 }
 
@@ -288,42 +266,47 @@ func (p *MemoryProxyPool) MarkFailed(proxy Proxy) {
 	// Let's modify Proxy struct to hold metadata? No, that changes API.
 	// Let's iterate adapters to find which one matches the port?
 	
-	targetStr := proxy.String()
-	var originalProxyStr string
+	socksAddr := proxy.String()
 	
-	if strings.HasPrefix(targetStr, "socks5://127.0.0.1:") {
-		// It's likely a VLESS adapter
-		for vlessLink, adapter := range p.vlessAdapters {
-			if "socks5://"+adapter.SocksAddr() == targetStr {
-				originalProxyStr = vlessLink
-				break
+	// Handle Ephemeral Adapter
+	if adapter, ok := p.activeAdapters[socksAddr]; ok {
+		// Close it
+		adapter.Close()
+		delete(p.activeAdapters, socksAddr)
+		
+		// Handle VLESS failure logic
+		if vlessLink, ok := p.proxyToVless[socksAddr]; ok {
+			delete(p.proxyToVless, socksAddr)
+			delete(p.busyProxies, vlessLink) // Release busy so we can remove/retry
+			
+			p.failureCounts[vlessLink]++
+			if p.failureCounts[vlessLink] > 3 {
+				log.Printf("❌ VLESS node failed too many times (%d). Removing: %s", p.failureCounts[vlessLink], vlessLink[:30]+"...")
+				// Remove from workingProxies
+				for i, px := range p.workingProxies {
+					if px.Server == vlessLink {
+						p.workingProxies = append(p.workingProxies[:i], p.workingProxies[i+1:]...)
+						break
+					}
+				}
+				p.failedProxies[vlessLink] = true
+			} else {
+				log.Printf("⚠️ VLESS node failed (Count: %d/3). Retrying next time.", p.failureCounts[vlessLink])
 			}
 		}
-	} else {
-		originalProxyStr = targetStr
-	}
-	
-	if originalProxyStr == "" {
-		return // Can't find it
+		return
 	}
 
-	proxyStr := originalProxyStr
-	// Remove from working
+	// Normal Proxy Logic
+	proxyStr := socksAddr
 	for i, px := range p.workingProxies {
-		if px.String() == proxyStr { // Simple comparison
+		if px.String() == proxyStr { 
 			p.workingProxies = append(p.workingProxies[:i], p.workingProxies[i+1:]...)
 			break
 		}
 	}
 	p.failedProxies[proxyStr] = true
 	
-	// If it was VLESS, stop the adapter
-	if adapter, ok := p.vlessAdapters[proxyStr]; ok {
-		adapter.Close()
-		delete(p.vlessAdapters, proxyStr)
-	}
-	
-	// Replenish from reserve if needed
 	p.replenish()
 }
 
@@ -344,7 +327,6 @@ func (p *MemoryProxyPool) replenish() {
 	time.Sleep(500 * time.Millisecond)
 	
 	// Pop from reserve
-	// Use random or first? First is fine since we shuffled on fetch.
 	newProxy := p.reserveProxies[0]
 	p.reserveProxies = p.reserveProxies[1:]
 	
@@ -354,38 +336,7 @@ func (p *MemoryProxyPool) replenish() {
 	}
 	log.Printf("Replenishing pool with reserve proxy: %s", serverLog)
 	
-	// Start adapter if VLESS
-	if strings.HasPrefix(newProxy.Server, "vless://") {
-		// Unlock during adapter start to avoid holding lock too long?
-		// But we need to protect maps.
-		// StartVLESSAdapter is slow.
-		// Let's unlock, start, lock.
-		p.lock.Unlock()
-		serverLog := newProxy.Server
-		if len(serverLog) > 30 {
-			serverLog = serverLog[:30] + "..."
-		}
-		notify.Send(fmt.Sprintf("🔄 Replenishing: Starting VLESS adapter for %s", serverLog))
-		adapter, err := StartVLESSAdapter(newProxy.Server)
-		p.lock.Lock()
-		
-		if err != nil {
-			log.Printf("Failed to start adapter for reserve proxy: %v", err)
-			notify.Send(fmt.Sprintf("❌ Replenish Failed: %v", err))
-			// Try next one recursively (but we need to be careful about lock)
-			// Since we are locked now, we can call replenish (which locks again? No, it's not recursive if we use a helper or just loop)
-			// Recursive call to replenish will deadlock if we hold lock.
-			// We should use a loop instead of recursion.
-			
-			// Actually, let's just return and let the next cycle handle it?
-			// Or better, loop here.
-			return 
-		}
-		p.vlessAdapters[newProxy.Server] = adapter
-		log.Printf("Started VLESS adapter for replenished proxy at %s", adapter.SocksAddr())
-		notify.Send(fmt.Sprintf("✅ Replenished: VLESS adapter started at %s", adapter.SocksAddr()))
-	}
-	
+	// Ephemeral: Just add to working, don't start adapter
 	p.workingProxies = append(p.workingProxies, newProxy)
 }
 
@@ -504,23 +455,10 @@ func (p *MemoryProxyPool) AddProxies(proxies []string) {
 		if proxy := ParseProxy(proxyStr); proxy != nil {
 			// Decide where to put it
 			if len(p.workingProxies) < p.minPoolSize {
-				// Add to working and start adapter
-				if strings.HasPrefix(proxy.Server, "vless://") {
-					if _, ok := p.vlessAdapters[proxy.Server]; !ok {
-						adapter, err := StartVLESSAdapter(proxy.Server)
-						if err != nil {
-							log.Printf("Failed to start adapter for %s: %v", proxy.Server, err)
-							continue
-						}
-						p.vlessAdapters[proxy.Server] = adapter
-						log.Printf("Started VLESS adapter at %s", adapter.SocksAddr())
-						// Stagger startup to prevent connection burst
-						time.Sleep(100 * time.Millisecond)
-					}
-				}
+				// Add to working (Ephemeral: Don't start adapter)
 				p.workingProxies = append(p.workingProxies, *proxy)
 			} else {
-				// Add to reserve (do NOT start adapter)
+				// Add to reserve
 				p.reserveProxies = append(p.reserveProxies, *proxy)
 			}
 			addedCount++
@@ -677,13 +615,16 @@ func (p *MemoryProxyPool) RemoveProxy(proxyStr string) {
 	// If multiplexed, keys are "vless://...#index"
 	// We need to remove all adapters derived from this base link.
 	
-	for key, adapter := range p.vlessAdapters {
-		// Check if key starts with proxyStr (which is the vless link)
-		// The key format is "vless://...#index"
-		if strings.HasPrefix(key, proxyStr) {
-			adapter.Close()
-			delete(p.vlessAdapters, key)
-			log.Printf("Removed base VLESS adapter: %s", key)
+	// If it's a VLESS adapter, close any active instances using this config
+	for socksAddr, vlessLink := range p.proxyToVless {
+		if vlessLink == proxyStr || strings.HasPrefix(vlessLink, proxyStr) {
+			if adapter, ok := p.activeAdapters[socksAddr]; ok {
+				adapter.Close()
+				delete(p.activeAdapters, socksAddr)
+				log.Printf("Forced close of active adapter for removed proxy: %s", vlessLink[:30]+"...")
+			}
+			delete(p.proxyToVless, socksAddr)
+			delete(p.busyProxies, vlessLink)
 		}
 	}
 }

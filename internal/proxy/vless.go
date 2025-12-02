@@ -53,6 +53,7 @@ func StartVLESSAdapter(vlessLink string) (*VLESSAdapter, error) {
 	}
 
 	if err := instance.Start(); err != nil {
+		instance.Close()
 		return nil, fmt.Errorf("failed to start xray instance: %v", err)
 	}
 
@@ -83,6 +84,10 @@ func (a *VLESSAdapter) Close() {
 	defer a.mu.Unlock()
 	if a.CancelFunc != nil {
 		a.CancelFunc()
+	}
+	if a.Instance != nil {
+		// Force close the instance immediately
+		a.Instance.Close()
 	}
 }
 

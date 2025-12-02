@@ -149,7 +149,7 @@ loop:
 						proxyPool.MarkFailed(*p)
 						
 						// If timeout, we ran for full duration, so restart immediately (no penalty)
-						if strings.Contains(err.Error(), "timed out") {
+						if strings.Contains(err.Error(), "BATCH_COMPLETED_TIMEOUT") {
 							log.Println("🔄 Timeout detected, restarting immediately...")
 							time.Sleep(100 * time.Millisecond)
 						} else {

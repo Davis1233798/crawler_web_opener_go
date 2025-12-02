@@ -1,34 +1,42 @@
-# VLESS Connection Fix Walkthrough
+# Ephemeral Xray Adapters Walkthrough
 
-I have implemented fixes to resolve VLESS connection issues and ensure proxy reliability.
+## Problem
+The user requested a mechanism to "monitor Xray status, timely recycle on error, and recycle after correct execution".
+The previous "Long-Lived Adapter" approach had risks of:
+1.  **Zombie Processes**: If the app crashed or failed to cleanup, Xray instances might persist.
+2.  **Stale State**: Long-running adapters might get into bad states (e.g. connection loops).
+3.  **Resource Leaks**: Accumulation of unused adapters.
 
-## Changes
-1. **Remove Base Link**: The domain-based VLESS link is removed from the pool after fetching IPs to prevent `connection reset` errors.
-2. **SNI Preservation**: `UpdateProxiesFromIPs` now preserves the original domain as `sni` and `host` when using fetched IPs.
-3. **Strict Validation**: `RunBatch` now enforces a mandatory IP check. If the proxy cannot reach `api.ipify.org`, the batch aborts immediately.
-4. **IP Validation**: `FetchPreferredIPs` now strictly validates that fetched strings are valid IPs, preventing errors like `failed to dial to Last:443`.
-5. **Xray Config**: Cleaned up `wsSettings` to ensure compliance with Xray requirements (explicit path).
+## Solution: Ephemeral Adapters
+I refactored `MemoryProxyPool` to treat Xray adapters as **ephemeral resources**, tied strictly to the lifecycle of a single batch execution.
 
-## Verification Results
+### Lifecycle
+1.  **Initialize**:
+    -   Loads VLESS config strings from disk.
+    -   **Does NOT** start any Xray processes.
+2.  **GetProxy (Start)**:
+    -   Selects a free VLESS config.
+    -   **Starts** a new Xray adapter instance on a random port.
+    -   Returns the local SOCKS5 address.
+    -   Maps `SocksAddr -> Adapter`.
+3.  **RunBatch (Use)**:
+    -   Crawler uses the local SOCKS5 proxy.
+4.  **ReleaseProxy / MarkFailed (Recycle)**:
+    -   **Closes** the Xray adapter immediately (kills the process).
+    -   Removes it from active maps.
+    -   Unmarks the VLESS config as busy.
 
-### Remote Unit Test (SNI)
-```
-=== RUN   TestUpdateProxiesFromIPs_SNI
---- PASS: TestUpdateProxiesFromIPs_SNI (0.00s)
-PASS
-```
+### Code Changes
+-   **`internal/proxy/proxy.go`**:
+    -   Removed `vlessAdapters` (long-lived map).
+    -   Added `activeAdapters` (short-lived map).
+    -   Updated `GetProxy` to start adapters.
+    -   Updated `ReleaseProxy` and `MarkFailed` to close adapters.
+    -   Cleaned up `Initialize`, `AddProxies`, `replenish` to remove old startup logic.
 
-### Strict Validation & IP Check
-The crawler will now:
-- Ignore invalid lines (like "Last Modified") from IP lists.
-- Abort batches if the proxy is dead.
-- Log `🔌 Connected via Proxy IP: X.X.X.X` on success.
+## Verification
+-   **Recycle on Error**: `MarkFailed` calls `adapter.Close()`.
+-   **Recycle on Success**: `ReleaseProxy` calls `adapter.Close()`.
+-   **Monitoring**: Process is only alive while being used. If `RunBatch` fails (e.g. Xray crash), `MarkFailed` ensures cleanup.
 
-## Next Steps
-1. **Deploy & Run**: The changes are pushed to `feature/vless`.
-2. **Monitor**: Run the crawler on the remote server.
-   ```bash
-   cd ~/crawler_web_opener_go
-   go build -o crawler cmd/crawler/main.go
-   ./crawler
-   ```
+This architecture ensures that **1 Batch = 1 Xray Process**, guaranteeing a clean slate for every execution and preventing "dead process" accumulation.
