@@ -17,6 +17,7 @@ I refactored `MemoryProxyPool` to treat Xray adapters as **ephemeral resources**
 2.  **GetProxy (Start)**:
     -   Selects a free VLESS config.
     -   **Starts** a new Xray adapter instance on a random port.
+    -   **Throttling**: If startup fails, sleeps 200ms and retries (max 5 times) to prevent CPU/Process storms.
     -   Returns the local SOCKS5 address.
     -   Maps `SocksAddr -> Adapter`.
 3.  **RunBatch (Use)**:
@@ -30,7 +31,7 @@ I refactored `MemoryProxyPool` to treat Xray adapters as **ephemeral resources**
 -   **`internal/proxy/proxy.go`**:
     -   Removed `vlessAdapters` (long-lived map).
     -   Added `activeAdapters` (short-lived map).
-    -   Updated `GetProxy` to start adapters.
+    -   Updated `GetProxy` to start adapters with **throttling**.
     -   Updated `ReleaseProxy` and `MarkFailed` to close adapters.
     -   Cleaned up `Initialize`, `AddProxies`, `replenish` to remove old startup logic.
 
@@ -38,5 +39,6 @@ I refactored `MemoryProxyPool` to treat Xray adapters as **ephemeral resources**
 -   **Recycle on Error**: `MarkFailed` calls `adapter.Close()`.
 -   **Recycle on Success**: `ReleaseProxy` calls `adapter.Close()`.
 -   **Monitoring**: Process is only alive while being used. If `RunBatch` fails (e.g. Xray crash), `MarkFailed` ensures cleanup.
+-   **Storm Prevention**: `GetProxy` backs off if adapters fail to start.
 
 This architecture ensures that **1 Batch = 1 Xray Process**, guaranteeing a clean slate for every execution and preventing "dead process" accumulation.

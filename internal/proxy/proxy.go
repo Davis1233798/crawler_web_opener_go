@@ -181,7 +181,13 @@ func (p *MemoryProxyPool) GetProxy() *Proxy {
 	}
 
 	// Iterate through proxies to find a free one
+	attempts := 0
 	for _, proxy := range p.workingProxies {
+		if attempts >= 5 {
+			log.Println("⚠️ Too many failed adapter starts in one cycle, backing off.")
+			return nil
+		}
+
 		if !p.busyProxies[proxy.Server] {
 			// Found a free VLESS config
 			p.busyProxies[proxy.Server] = true
@@ -194,6 +200,8 @@ func (p *MemoryProxyPool) GetProxy() *Proxy {
 					// Mark as failed immediately? Or just skip?
 					// Let's skip and try next
 					delete(p.busyProxies, proxy.Server)
+					attempts++
+					time.Sleep(200 * time.Millisecond) // Throttle to prevent storm
 					continue
 				}
 				
