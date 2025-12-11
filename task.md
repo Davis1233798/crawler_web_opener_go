@@ -1,11 +1,20 @@
-# Task List
+# Task: Implement Clicking, IP Limits, and Proxy Fallback
 
-- [x] Explore existing codebase in `crawler-go` <!-- id: 0 -->
-- [x] Create implementation plan <!-- id: 1 -->
-- [x] Add new proxy to `proxies.txt` <!-- id: 6 -->
-- [x] Implement concurrent page opening logic (`RunBatch`) <!-- id: 2 -->
-- [x] Restore worker pool for multiple browsers <!-- id: 7 -->
-- [x] Implement headless/headed mode toggle <!-- id: 3 -->
-- [x] Implement human simulation (clicking) <!-- id: 4 -->
-- [x] Implement auto-removal of failed proxies from disk <!-- id: 8 -->
-- [ ] Verify implementation <!-- id: 5 -->
+- [x] **IP Usage Tracking**
+    - [x] Implement robust daily limit (1 run/IP/day)
+    - [x] Persist usage data to `ip_usage.json`
+- [x] **Proxy Fallback System**
+    - [x] Load `proxies.txt` as primary source
+    - [x] If all primary IPs used today, fetch free proxies
+    - [x] Implement fast availability checker for fetched proxies
+    - [ ] **Prevent concurrent fetching (Thundering Herd)** <!-- New -->
+- [x] **Browser Automation**
+    - [x] Navigate to `https://tsplsimulator.dpdns.org/`
+    - [x] Click specific banner (image with `webtrafic.ru`)
+    - [x] Close page after click
+- [ ] **Configuration**
+    - [ ] Ensure `HEADLESS=True` default
+    - [ ] Verify 10 threads
+- [ ] **Verification**
+    - [ ] Verify IP usage limits
+    - [ ] Verify banner clicking logic

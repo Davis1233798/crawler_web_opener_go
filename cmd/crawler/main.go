@@ -70,6 +70,10 @@ func main() {
 
 	log.Println("Workers started...")
 
+	// Fetch Lock to prevent thundering herd
+	var fetchLock sync.Mutex
+	var isFetching bool
+
 	// Main loop
 	log.Println("Starting batch processing...")
 
@@ -93,7 +97,26 @@ loop:
 					// Acquire a proxy
 					p := proxyPool.GetProxy()
 					if p == nil {
+						// Check if fetching
+						fetchLock.Lock()
+						if isFetching {
+							fetchLock.Unlock()
+							log.Println("Another worker is fetching proxies, waiting...")
+							time.Sleep(2 * time.Second)
+							return
+						}
+						
+						// We are the fetcher
+						isFetching = true
+						fetchLock.Unlock()
+						
 						log.Println("No available proxies (all used or exhausted). Fetching free proxies...")
+						
+						defer func() {
+							fetchLock.Lock()
+							isFetching = false
+							fetchLock.Unlock()
+						}()
 						
 						// Fetch new proxies
 						newProxies := fetcher.FetchAll(50)
