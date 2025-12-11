@@ -93,9 +93,34 @@ loop:
 					// Acquire a proxy
 					p := proxyPool.GetProxy()
 					if p == nil {
-						log.Println("No proxies available, waiting...")
-						time.Sleep(5 * time.Second)
-						return
+						log.Println("No available proxies (all used or exhausted). Fetching free proxies...")
+						
+						// Fetch new proxies
+						newProxies := fetcher.FetchAll(50)
+						log.Printf("Fetched %d potential proxies. Verifying...", len(newProxies))
+						
+						// Verify fast
+						var validProxies []string
+						for _, np := range newProxies {
+							parsed := proxy.ParseProxy(np)
+							if parsed != nil && proxyPool.CheckProxyFast(*parsed) {
+								validProxies = append(validProxies, np)
+							}
+						}
+						
+						if len(validProxies) > 0 {
+							log.Printf("Found %d working free proxies. Adding to pool...", len(validProxies))
+							proxyPool.AddProxies(validProxies) // This will add them to working list (and implicitly allow reuse since they are new hosts)
+							proxyPool.SaveToDisk()
+							// Try get again
+							p = proxyPool.GetProxy()
+						}
+						
+						if p == nil {
+							log.Println("Still no proxies available. Sleeping 10s...")
+							time.Sleep(10 * time.Second)
+							return
+						}
 					}
 
 					log.Printf("Using proxy %s for batch", p.String())

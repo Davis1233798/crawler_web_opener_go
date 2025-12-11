@@ -10,6 +10,7 @@ import (
 	"github.com/Davis1233798/crawler-go/internal/proxy"
 	"github.com/Davis1233798/crawler-go/pkg/fingerprint"
 	"github.com/playwright-community/playwright-go"
+	"strings"
 )
 
 type BrowserPool struct {
@@ -171,6 +172,37 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				log.Printf("Navigation failed for %s: %v", targetURL, err)
 				errChan <- err
 				return
+			}
+			
+			// Specific Logic for tsplsimulator
+			if strings.Contains(targetURL, "tsplsimulator.dpdns.org") {
+				log.Printf("Detecting tsplsimulator. Looking for webtrafic banner...")
+				// Wait for banner
+				bannerSelector := "img[src*='webtrafic.ru']"
+				
+				// Try waiting for 10s
+				banner, err := page.WaitForSelector(bannerSelector, playwright.PageWaitForSelectorOptions{
+					Timeout: playwright.Float(10000),
+				})
+				
+				if err == nil && banner != nil {
+					log.Printf("Banner found! Clicking...")
+					// Scroll to it
+					banner.ScrollIntoViewIfNeeded()
+					time.Sleep(1 * time.Second)
+					
+					// Click
+					banner.Click()
+					log.Printf("Banner clicked.")
+					
+					// Wait a bit after click
+					time.Sleep(2 * time.Second)
+					
+					// Close page immediately after click action is done
+					return 
+				} else {
+					log.Printf("Banner not found on %s", targetURL)
+				}
 			}
 
 			bot.simulateActivity(page, minDuration)
