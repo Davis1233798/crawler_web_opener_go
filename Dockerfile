@@ -7,6 +7,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Install Playwright driver
+# This populates /root/.cache/ms-playwright-go with the driver binary required by the Go library
+RUN go run github.com/playwright-community/playwright-go/cmd/playwright@v0.4001.0 install --with-deps
+
 # Copy source
 COPY . .
 
@@ -14,7 +18,8 @@ COPY . .
 RUN go build -o crawler ./cmd/crawler
 
 # Final Stage
-FROM mcr.microsoft.com/playwright:v1.48.0-jammy
+# Using v1.40.0 to match the Go library version (v0.4001.0 ~= v1.40.1)
+FROM mcr.microsoft.com/playwright:v1.40.0-jammy
 
 WORKDIR /app
 
@@ -26,13 +31,16 @@ RUN apt-get update && apt-get install -y unzip curl \
     && rm xray.zip \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Copy Playwright driver from builder cache
+COPY --from=builder /root/.cache/ms-playwright-go /root/.cache/ms-playwright-go
+
 # Copy binary and assets
 COPY --from=builder /app/crawler .
 COPY --from=builder /app/target_site.txt .
 COPY --from=builder /app/.env.example .
-# Create empty proxies.txt if not exists, or copy if exists (using wildcard hack if needed, but simple COPY is safer if we ensure it exists)
+# Copy empty proxies.txt/vless.txt if they exist in context, handled by user mounting usually
+# We copy them just in case they are needed for default startup
 COPY proxies.txt . 
-# Copy vless.txt if needed
 COPY vless.txt .
 
 # Ensure permissions
