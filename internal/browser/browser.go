@@ -182,16 +182,24 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				
 				// Try waiting for up to 60s, scrolling every few seconds
 				var banner playwright.ElementHandle
+				var foundFrame playwright.Frame
 				
 				for i := 0; i < 12; i++ { // 12 * 5s = 60s
-					// Check if exists
-					b, _ := page.QuerySelector(bannerSelector)
-					if b != nil {
-						isVisible, _ := b.IsVisible()
-						if isVisible {
-							banner = b
-							break
+					// Check main page and all frames
+					for _, frame := range page.Frames() {
+						b, _ := frame.QuerySelector(bannerSelector)
+						if b != nil {
+							isVisible, _ := b.IsVisible()
+							if isVisible {
+								banner = b
+								foundFrame = frame
+								break
+							}
 						}
+					}
+					
+					if banner != nil {
+						break
 					}
 					
 					// Scroll down/up to trigger lazy loading
@@ -199,25 +207,40 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 					time.Sleep(1 * time.Second)
 					page.Mouse().Wheel(0, -200)
 					time.Sleep(4 * time.Second)
+					
+					// Log frames periodically to debug
+					if i%2 == 0 {
+						log.Printf("Scanning %d frames...", len(page.Frames()))
+					}
 				}
 				
 				if banner != nil {
-					log.Printf("Banner found! Clicking...")
+					log.Printf("Banner found in frame %s! Clicking...", foundFrame.Url())
 					// Scroll to it
 					banner.ScrollIntoViewIfNeeded()
 					time.Sleep(1 * time.Second)
 					
 					// Click
-					banner.Click()
+					if err := banner.Click(); err != nil {
+						log.Printf("Click failed: %v", err)
+						// Fallback: JS click
+						foundFrame.Evaluate("element => element.click()", banner)
+					}
 					log.Printf("Banner clicked.")
 					
 					// Wait a bit after click
 					time.Sleep(2 * time.Second)
-					
-					// Close page immediately after click action is done
 					return 
 				} else {
 					log.Printf("Banner not found on %s after 60s searching", targetURL)
+					// Take Screenshot for debug
+					screenshotPath := fmt.Sprintf("debug_fail_%d.png", time.Now().Unix())
+					if _, err := page.Screenshot(playwright.PageScreenshotOptions{
+						Path: playwright.String(screenshotPath),
+						FullPage: playwright.Bool(true),
+					}); err == nil {
+						log.Printf("Saved debug screenshot to %s", screenshotPath)
+					}
 				}
 			}
 
