@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"strings"
+
 	"github.com/Davis1233798/crawler-go/internal/proxy"
 	"github.com/Davis1233798/crawler-go/pkg/fingerprint"
 	"github.com/playwright-community/playwright-go"
-	"strings"
 )
 
 type BrowserPool struct {
@@ -215,7 +216,7 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				}
 				
 				if banner != nil {
-					log.Printf("Banner found in frame %s! Clicking...", foundFrame.Url())
+					log.Printf("Banner found in frame %s! Clicking...", foundFrame.URL())
 					// Scroll to it
 					banner.ScrollIntoViewIfNeeded()
 					time.Sleep(1 * time.Second)
