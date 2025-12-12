@@ -118,15 +118,21 @@ func (p *MemoryProxyPool) loadFromDisk() []Proxy {
 	defer file.Close()
 
 	var proxies []Proxy
+	seen := make(map[string]bool)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
 			if proxy := ParseProxy(line); proxy != nil {
-				proxies = append(proxies, *proxy)
+				proxyStr := proxy.String()
+				if !seen[proxyStr] {
+					proxies = append(proxies, *proxy)
+					seen[proxyStr] = true
+				}
 			}
 		}
 	}
+	log.Printf("Loaded %d unique proxies from disk (deduplicated)", len(proxies))
 	return proxies
 }
 
