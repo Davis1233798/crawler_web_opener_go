@@ -97,7 +97,7 @@ func (p *MemoryProxyPool) Initialize(strictVerify bool, targetURL string) {
 
 	if len(rawProxies) > 0 && strictVerify {
 		log.Println("Strictly verifying proxies...")
-		p.workingProxies = p.verifyBatch(rawProxies, targetURL)
+		p.workingProxies = p.VerifyBatch(rawProxies, targetURL)
 		log.Printf("✅ %d/%d proxies passed strict verification", len(p.workingProxies), len(rawProxies))
 	} else {
 		p.workingProxies = rawProxies
@@ -206,7 +206,7 @@ func (p *MemoryProxyPool) MarkFailed(proxy Proxy) {
 	p.failedProxies[proxyStr] = true
 }
 
-func (p *MemoryProxyPool) verifyBatch(proxies []Proxy, targetURL string) []Proxy {
+func (p *MemoryProxyPool) VerifyBatch(proxies []Proxy, targetURL string) []Proxy {
 	var verified []Proxy
 	var wg sync.WaitGroup
 	results := make(chan Proxy, len(proxies))

@@ -112,32 +112,44 @@ loop:
 						
 						log.Println("No available proxies (all used or exhausted). Fetching free proxies...")
 						
-						defer func() {
-							fetchLock.Lock()
-							isFetching = false
-							fetchLock.Unlock()
+						// Fetch logic in a closure to ensure cleanup of isFetching
+						func() {
+							defer func() {
+								fetchLock.Lock()
+								isFetching = false
+								fetchLock.Unlock()
+							}()
+							
+							// Fetch new proxies
+							newProxies := fetcher.FetchAll(50)
+							log.Printf("Fetched %d potential proxies. Verifying...", len(newProxies))
+							
+							// Convert strings to Proxy structs for batch verification
+							var proxiesToVerify []proxy.Proxy
+							for _, np := range newProxies {
+								if parsed := proxy.ParseProxy(np); parsed != nil {
+									proxiesToVerify = append(proxiesToVerify, *parsed)
+								}
+							}
+							
+							// Use parallel batch verification
+							validProxies := proxyPool.VerifyBatch(proxiesToVerify, "https://httpbin.org/ip")
+							
+							if len(validProxies) > 0 {
+								// Convert back to string purely because AddProxies takes strings (or we could expose AddProxyStructs, but string is fine for now)
+								var validStrs []string
+								for _, vp := range validProxies {
+									validStrs = append(validStrs, vp.String())
+								}
+								
+								log.Printf("Found %d working free proxies. Adding to pool...", len(validStrs))
+								proxyPool.AddProxies(validStrs) 
+								proxyPool.SaveToDisk()
+							}
 						}()
 						
-						// Fetch new proxies
-						newProxies := fetcher.FetchAll(50)
-						log.Printf("Fetched %d potential proxies. Verifying...", len(newProxies))
-						
-						// Verify fast
-						var validProxies []string
-						for _, np := range newProxies {
-							parsed := proxy.ParseProxy(np)
-							if parsed != nil && proxyPool.CheckProxyFast(*parsed) {
-								validProxies = append(validProxies, np)
-							}
-						}
-						
-						if len(validProxies) > 0 {
-							log.Printf("Found %d working free proxies. Adding to pool...", len(validProxies))
-							proxyPool.AddProxies(validProxies) // This will add them to working list (and implicitly allow reuse since they are new hosts)
-							proxyPool.SaveToDisk()
-							// Try get again
-							p = proxyPool.GetProxy()
-						}
+						// Try get again (lock is released now)
+						p = proxyPool.GetProxy()
 						
 						if p == nil {
 							log.Println("Still no proxies available. Sleeping 10s...")
