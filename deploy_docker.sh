@@ -61,7 +61,11 @@ docker run -d --name $APP_NAME \
   -v $(pwd)/ip_usage.json:/app/ip_usage.json \
   $IMAGE_NAME
 
-echo "✅ Deployment complete!"
-echo "📜 Tailing logs (Press Ctrl+C to exit log view)..."
+echo "✅ Deployment complete! Container is running in background (Detached mode)."
+echo "📜 Recent logs:"
 sleep 2
-docker logs -f $APP_NAME
+docker logs --tail 20 $APP_NAME
+
+echo ""
+echo "💡 To follow logs in real-time, run: docker logs -f $APP_NAME"
+echo "You can now safely exit the remote session without stopping the crawler."
