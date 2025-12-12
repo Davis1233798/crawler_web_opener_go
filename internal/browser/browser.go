@@ -180,12 +180,28 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 				// Wait for banner
 				bannerSelector := "img[src*='webtrafic.ru']"
 				
-				// Try waiting for 10s
-				banner, err := page.WaitForSelector(bannerSelector, playwright.PageWaitForSelectorOptions{
-					Timeout: playwright.Float(10000),
-				})
+				// Try waiting for up to 60s, scrolling every few seconds
+				var banner playwright.ElementHandle
 				
-				if err == nil && banner != nil {
+				for i := 0; i < 12; i++ { // 12 * 5s = 60s
+					// Check if exists
+					b, _ := page.QuerySelector(bannerSelector)
+					if b != nil {
+						isVisible, _ := b.IsVisible()
+						if isVisible {
+							banner = b
+							break
+						}
+					}
+					
+					// Scroll down/up to trigger lazy loading
+					page.Mouse().Wheel(0, 500)
+					time.Sleep(1 * time.Second)
+					page.Mouse().Wheel(0, -200)
+					time.Sleep(4 * time.Second)
+				}
+				
+				if banner != nil {
 					log.Printf("Banner found! Clicking...")
 					// Scroll to it
 					banner.ScrollIntoViewIfNeeded()
@@ -201,7 +217,7 @@ func (bot *BrowserBot) RunBatch(urls []string, p *proxy.Proxy, minDuration int) 
 					// Close page immediately after click action is done
 					return 
 				} else {
-					log.Printf("Banner not found on %s", targetURL)
+					log.Printf("Banner not found on %s after 60s searching", targetURL)
 				}
 			}
 

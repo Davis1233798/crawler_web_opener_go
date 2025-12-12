@@ -166,29 +166,40 @@ func (p *MemoryProxyPool) GetProxy() *Proxy {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	
 	var available []*Proxy
+	var allWorking []*Proxy
+
 	for i := range p.workingProxies {
 		proxy := &p.workingProxies[i]
+		allWorking = append(allWorking, proxy)
+
 		host := getHost(proxy.Server)
-		
 		lastUsed, ok := p.usageMap[host]
 		if !ok || lastUsed.Before(today) {
 			available = append(available, proxy)
 		}
 	}
 	
-	if len(available) == 0 {
-		return nil
+	// BEST EFFORT: If we have fresh proxies, use them.
+	if len(available) > 0 {
+		selected := available[rand.Intn(len(available))]
+		host := getHost(selected.Server)
+		p.usageMap[host] = now
+		p.saveUsage()
+		return selected
+	}
+
+	// FALLBACK: If we have NO fresh proxies but DO have working proxies, 
+	// reuse one to keep the crawler alive (Log a warning)
+	if len(allWorking) > 0 {
+		log.Println("⚠️ No fresh IPs available for today. Reusing existing proxy to maintain activity.")
+		selected := allWorking[rand.Intn(len(allWorking))]
+		host := getHost(selected.Server)
+		p.usageMap[host] = now
+		p.saveUsage()
+		return selected
 	}
 	
-	// Pick random
-	selected := available[rand.Intn(len(available))]
-	
-	// Mark as used
-	host := getHost(selected.Server)
-	p.usageMap[host] = now
-	p.saveUsage()
-	
-	return selected
+	return nil
 }
 
 func (p *MemoryProxyPool) MarkFailed(proxy Proxy) {
