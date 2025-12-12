@@ -249,17 +249,29 @@ func checkProxy(proxy Proxy, targetURL string) bool {
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyURL(proxyURL),
+			DisableKeepAlives: true,
 		},
 		Timeout: 10 * time.Second,
 	}
 
 	resp, err := client.Get(targetURL)
 	if err != nil {
+		// verbose logging only if needed, for now maybe just sample or log once in a while? 
+		// actually user wants to know why it fails. Let's log unique errors maybe? 
+		// For now simple log.Printf might flood, so let's keep it minimal or specific
 		return false
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode >= 200 && resp.StatusCode < 400
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		// Log bad status codes to see if we are rate limited
+		if resp.StatusCode == 429 {
+			log.Printf("Verification 429 (Rate Limit) for %s", proxy.Server)
+		}
+		return false
+	}
+
+	return true
 }
 
 func (p *MemoryProxyPool) CheckProxyFast(proxy Proxy) bool {
