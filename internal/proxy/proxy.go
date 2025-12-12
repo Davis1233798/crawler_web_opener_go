@@ -210,7 +210,7 @@ func (p *MemoryProxyPool) VerifyBatch(proxies []Proxy, targetURL string) []Proxy
 	var verified []Proxy
 	var wg sync.WaitGroup
 	results := make(chan Proxy, len(proxies))
-	sem := make(chan struct{}, 50) // Semaphore for concurrency limit
+	sem := make(chan struct{}, 200) // Increased semaphore for faster batch processing
 
 	for _, px := range proxies {
 		wg.Add(1)
@@ -238,7 +238,8 @@ func (p *MemoryProxyPool) VerifyBatch(proxies []Proxy, targetURL string) []Proxy
 
 func checkProxy(proxy Proxy, targetURL string) bool {
 	if targetURL == "" {
-		targetURL = "https://httpbin.org/ip"
+		// httpbin.org often rate limits. Use Google for robust connectivity check.
+		targetURL = "http://www.google.com"
 	}
 
 	proxyURL, err := url.Parse(proxy.ToURL())
@@ -254,19 +255,22 @@ func checkProxy(proxy Proxy, targetURL string) bool {
 		Timeout: 10 * time.Second,
 	}
 
-	resp, err := client.Get(targetURL)
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
-		// verbose logging only if needed, for now maybe just sample or log once in a while? 
-		// actually user wants to know why it fails. Let's log unique errors maybe? 
-		// For now simple log.Printf might flood, so let's keep it minimal or specific
+		return false
+	}
+	// Add User-Agent to avoid simple bot filtering
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		// Log bad status codes to see if we are rate limited
 		if resp.StatusCode == 429 {
-			log.Printf("Verification 429 (Rate Limit) for %s", proxy.Server)
+			log.Printf("Verification 429 (Rate Limit) for %s on %s", proxy.Server, targetURL)
 		}
 		return false
 	}
